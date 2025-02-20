@@ -136,7 +136,7 @@ class ModelManager:
         namespace: str | None = None,
     ):
         self.namespace = namespace or CURRENT_NAMESPACE.get()
-        self.namespace_token = CURRENT_NAMESPACE.set(namespace)
+        self.namespace_token = CURRENT_NAMESPACE.set(self.namespace)
         self._exit_stack = contextlib.ExitStack()
         if not isinstance(preload, dict):
             preload = dict.fromkeys(preload or [], None)
@@ -182,7 +182,7 @@ class ModelManager:
     def _(artifacts_or_predictors: dict[Callable, dict[str, Any] | None]):
         """Load multiple artifacts or predictors with configs."""
         current_namespace = CURRENT_NAMESPACE.get()
-        logger.info(
+        logger.debug(
             "Loading model components",
             artifacts=[
                 f
@@ -208,13 +208,13 @@ class ModelManager:
             for func_name, meta in MetaModelManager.functions.items():
                 if "clean_up" in meta:
                     self._exit_stack.callback(
-                        lambda m=meta, fn=func_name: self._cleanup_artefact(m, fn)
+                        lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
                     )
 
         for func_name, meta in MetaModelManager.functions.items():
             if "clean_up" in meta:
                 self._exit_stack.callback(
-                    lambda m=meta, fn=func_name: self._cleanup_artefact(m, fn)
+                    lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
                 )
         try:
             self.load(self.artifacts_or_predictors)
@@ -227,7 +227,7 @@ class ModelManager:
         return self
 
     def _close(self):
-        logger.info("Closing model manager", namespace=self.namespace)
+        logger.debug("Closing model manager", namespace=self.namespace)
         CURRENT_NAMESPACE.reset(self.namespace_token)
         try:
             self._exit_stack.close()
@@ -243,7 +243,7 @@ class ModelManager:
             logger.error("Exiting due to exception", error=str(exc_val))
 
     @staticmethod
-    def _cleanup_artefact(meta, func_name):
+    def _cleanup_artifact(meta, func_name):
         try:
             logger.debug("Tearing down component", component=func_name)
             if "clean_up" in meta:
@@ -268,7 +268,7 @@ class ModelManager:
             if "clean_up" not in MetaModelManager.functions.get(func_name, {}):
                 continue
             try:
-                ModelManager._cleanup_artefact(
+                ModelManager._cleanup_artifact(
                     MetaModelManager.functions[func_name], func_name
                 )
             except StopIteration:
@@ -391,8 +391,22 @@ class ModelManager:
         func_name = func.__name__
         kind = MetaModelManager.functions[func_name]["kind"]
         prepared_args = {}
-        logger.info("Loading component", name=func_name, kind=kind.value, config=config)
-
+        config = config or {}
+        config_cache_key = create_cache_key(config)
+        if cached := ModelManager._get_from_cache(
+            namespace, func_name, config_cache_key
+        ):
+            logger.debug(
+                "Using cached component",
+                kind=kind.value,
+                name=func_name,
+                cache_key=str(config_cache_key),
+                elapsed=round(time.perf_counter() - t0, 9),
+            )
+            return cached
+        logger.debug(
+            "Loading component", name=func_name, kind=kind.value, config=config
+        )
         # whether the function is an artifact or a predictor, it can have files dependencies
         files = MetaModelManager.functions[func_name]["files"]
         for param_name, uri, files_params in files:
@@ -437,19 +451,27 @@ class ModelManager:
                     MetaModelManager.functions[dep_func_name]["function"],
                     None,
                 )
-                for dep_func_name in MetaModelManager.functions[func.__name__][
+                for dep_func_name in MetaModelManager.functions[func_name][
                     "dependencies_to_resolve"
                 ]
                 if dep_func_name in MetaModelManager.functions
             ]
             logger.debug(
                 "Dependency resolution status",
-                predictor=func.__name__,
+                predictor=func_name,
                 resolved_count=len(dependencies),
                 resolved_names=[name for name, _, _ in dependencies],
             )
             dependencies.extend(resolved_functions)
             for param_name, dep_func, dep_func_args in dependencies:
+                if param_name in config:
+                    logger.debug(
+                        "Skipping dependency resolution",
+                        component=func_name,
+                        dependency=dep_func.__name__,
+                        cause="dependency passed in config",
+                    )
+                    continue
                 logger.debug(
                     "Processing dependency",
                     component=func_name,
@@ -461,24 +483,16 @@ class ModelManager:
                 prepared_args[param_name] = dep_result
 
             logger.debug("Prepared predictor", name=func_name, args=prepared_args)
-            return functools.partial(func, **(prepared_args | (config or {})))
+            prepared_predictor = functools.partial(
+                func, **(prepared_args | (config or {}))
+            )
+            ModelManager._cache_value(
+                namespace, func_name, config_cache_key, prepared_predictor
+            )
+            return prepared_predictor
 
         if kind != Kind.ARTIFACT:
             raise ValueError(f"Invalid kind {kind}")
-        # For artifacts, we cache the computed result
-        config_cache_key = create_cache_key(config)
-        if cached := ModelManager._get_from_cache(
-            namespace, func_name, config_cache_key
-        ):
-            logger.debug(
-                "Using cached artifact",
-                name=func_name,
-                cache_key=str(config_cache_key),
-                elapsed=round(time.perf_counter() - t0, 9),
-            )
-            return cached
-
-        # Load dependencies first
         dependencies = MetaModelManager.functions[func_name]["dependencies"]
         resolved_functions = [
             (
@@ -486,19 +500,28 @@ class ModelManager:
                 MetaModelManager.functions[dep_func_name]["function"],
                 None,
             )
-            for dep_func_name in MetaModelManager.functions[func.__name__][
+            for dep_func_name in MetaModelManager.functions[func_name][
                 "dependencies_to_resolve"
             ]
             if dep_func_name in MetaModelManager.functions
         ]
         logger.debug(
             "Dependency resolution status",
-            predictor=func.__name__,
+            predictor=func_name,
             resolved_count=len(dependencies),
             resolved_names=[name for name, _, _ in dependencies],
         )
         dependencies.extend(resolved_functions)
         for param_name, dep_func, dep_func_args in dependencies:
+            if param_name in config:
+                logger.debug(
+                    "Skipping dependency resolution",
+                    component=func_name,
+                    dependency=dep_func.__name__,
+                    cause="dependency passed in config",
+                )
+                continue
+
             logger.debug(
                 "Processing dependency",
                 component=func_name,
@@ -510,16 +533,7 @@ class ModelManager:
             prepared_args[param_name] = dep_result
 
         final_args = prepared_args | (config or {})
-        logger.info("Computing artifact", name=func_name, args=final_args)
-        cache_key = create_cache_key(final_args)
-        if cached := ModelManager._get_from_cache(namespace, func_name, cache_key):
-            logger.debug(
-                "Using cached artifact",
-                name=func_name,
-                cache_key=str(cache_key),
-                elapsed=round(time.perf_counter() - t0, 9),
-            )
-            return cached
+        logger.debug("Computing artifact", name=func_name, args=final_args)
         try:
             result = (
                 func.__wrapped__(**final_args)
@@ -529,9 +543,9 @@ class ModelManager:
             if isinstance(result, Generator):
                 MetaModelManager.functions[func_name]["clean_up"] = result
                 result = next(result)
-            ModelManager._cache_value(namespace, func_name, cache_key, result)
+            # ModelManager._cache_value(namespace, func_name, cache_key, result)
             ModelManager._cache_value(namespace, func_name, config_cache_key, result)
-            logger.info(
+            logger.debug(
                 "Component loaded",
                 name=func_name,
                 kind=kind.value,
