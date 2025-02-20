@@ -1,0 +1,6 @@
+site_name: daidai 🍊
+site_url: https://antoinejeannot.github.io/daidai/
+site_description: "Modern dependency & assets management library for MLOps "
+site_author: Antoine Jeannot
+theme:
+  name: material
