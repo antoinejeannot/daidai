@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=63", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "daidai"
+version = "0.0.0"
+description = "daidai - dependency injection for AI/MLops"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Antoine Jeannot", email = "antoine.jeannot1002+github@gmail.com"},
+]
+dependencies = [
+    "fsspec>=2025.2.0",
+    "pympler>=1.1",
+    "structlog>=25.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=4.0.1",
+    "ruff==0.9.4",
+    "pytest>=8.3.4",
+]
+
+[tool.setuptools]
+packages = ["daidai"]
+
+[tool.setuptools.package-data]
+daidai = [
+    "py.typed",
+]
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "RUF", # ruff-specific rules
+    "PT",  # pytest style
+    "SIM", # simplify
+    "TCH", # type-checking
+    "ARG", # unused arguments
+    "C4",  # comprehensions
+]
+
+ignore = [
+    "E501",    # Line too long (handled by formatter)
+    "B008",    # Do not perform function call in argument defaults
+    "C901",    # Too complex
+    "N999",    # Invalid module name
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["daidai"]
