@@ -16,10 +16,19 @@ from pathlib import Path
 from typing import Annotated, Any, BinaryIO, Literal, TextIO
 
 import fsspec
-import pympler.asizeof
-import structlog
 
-logger = structlog.get_logger(__name__)
+from daidai.logs import get_logger
+
+logger = get_logger(__name__)
+
+try:
+    import pympler.asizeof
+
+    has_pympler = True
+except ImportError:
+    has_pympler = False
+    logger.info("pympler is not installed, memory usage will not be logged")
+
 
 VALID_TYPES = (
     Path,
@@ -574,7 +583,9 @@ class ModelManager:
                 name=func_name,
                 kind=kind.value,
                 elapsed=round(time.perf_counter() - t0, 9),
-                size_mb=round(pympler.asizeof.asizeof(result) / (1024 * 1024), 9),
+                size_mb=round(pympler.asizeof.asizeof(result) / (1024 * 1024), 9)
+                if has_pympler
+                else None,
             )
             return result
 
