@@ -118,6 +118,16 @@ print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 # OOOPS, the new client timed out, of course :-)
 ```
 
+## Roadmap
+
+- [ ] Add tests (unit, integration, e2e)
+- [ ] Clean things up now that the UX has landed
+- [ ] Add docs
+- [ ] Handle multi-threading & concurrency with locks
+- [ ] Add support for async components
+- [ ] Add a cookbook with common patterns & recipes
+- [ ] Enjoy the fruits of my labor 🍊
+
 <!--
 
 ## Core Concepts
