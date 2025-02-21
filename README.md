@@ -6,14 +6,21 @@
   <em>Modern dependency & assets management library for MLOps</em>
 </p>
 
+<p align="center">
+<a href="https://github.com/antoinejeannot/daidai/actions/workflows/tests.yml"><img src="https://github.com/antoinejeannot/daidai/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+<a href="https://pypi.org/project/daidai/"><img src="https://img.shields.io/pypi/v/daidai.svg" alt="PyPI version"></a>
+<a href="https://pypi.org/project/daidai/"><img src="https://img.shields.io/pypi/pyversions/daidai.svg" alt="Python Versions"></a>
+<a href="https://github.com/antoinejeannot/daidai/blob/main/LICENSE"><img src="https://img.shields.io/github/license/antoinejeannot/daidai.svg" alt="License"></a>
+<img alt="AI MLOps" src="https://img.shields.io/badge/AI-MLOps-purple">
+</p>
 
-**daidai** is a minimalist, type-safe dependency management system for AI/ML components that streamlines workflow development with dependency injection, intelligent caching and seamless file handling.
+**daidai 🍊** is a minimalist, type-safe dependency management system for AI/ML components that streamlines workflow development with dependency injection, intelligent caching and seamless file handling.
 
-🚧 daidai is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, but feel free to give it a try :) 🚧
+🚧 **daidai** is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, but feel free to give it a try :) 🚧
 
 ## Why daidai?
 
-Built for both rapid prototyping and production ML workflows, daidai:
+Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
 
 - 🚀 **Accelerates Development** - Reduces iteration cycles with zero-config caching
 - 🧩 **Simplifies Architecture** - Define reusable components with clear dependencies
