@@ -140,6 +140,10 @@ def create_cache_key(args: dict[str, Any] | None) -> frozenset:
     return frozenset(hashable_items)
 
 
+P = typing.ParamSpec("P")
+R = typing.TypeVar("R")
+
+
 class ModelManager:
     def __init__(
         self,
@@ -430,7 +434,7 @@ class ModelManager:
         namespace: dict[str, dict[frozenset, Any]],
         func: Callable | Generator,
         config: dict[str, Any] | None = None,
-    ) -> Any:
+    ) -> Callable | Generator:
         t0 = time.perf_counter()
         func_name = func.__name__
         kind = MetaModelManager.functions[func_name]["kind"]
@@ -594,7 +598,7 @@ def component_decorator(kind: ComponentType):
         kind: The kind of component (Kind.ARTIFACT or Kind.PREDICTOR).
     """
 
-    def decorator(func: Callable):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         # Register the function and its metadata.
         MetaModelManager.functions[func.__name__] = Metadata(
             dependencies=[],
@@ -666,7 +670,9 @@ def component_decorator(kind: ComponentType):
                 (param_name, dep_func, dep_defaults | dep_func_args)
             )
 
-        @functools.wraps(func)
+        @functools.wraps(
+            func, assigned=(*functools.WRAPPER_ASSIGNMENTS, "__signature__")
+        )
         def wrapper(*args, **kwargs):
             # Build the configuration dictionary from bound arguments.
             bound_args = sig.bind_partial(*args, **kwargs)
