@@ -428,7 +428,7 @@ class ModelManager:
                 raise ValueError(
                     "Cannot use NO_CACHE strategy with non-str or non-bytes deserialization when the file is remote"
                 )
-            with fsspec.open(source_uri, **open_options) as f:
+            with fsspec.open(raw_path, **open_options) as f:
                 return f.read()
         logger.error(
             "Feature not yet implemented",

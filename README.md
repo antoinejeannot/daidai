@@ -42,86 +42,80 @@ pip install daidai
 ## Quick Start
 
 ```python
-from typing import Any
+import base64
+from typing import Annotated, Any
 
 import openai
 
 from daidai import ModelManager, artifact, predictor
 
-# Define an artifact which is a long-lived object
-# that can be used by multiple predictors
+# Define artifacts which are long-lived objects
+# that can be used by multiple predictors, or other artifacts
 
 
 @artifact
-def openai_client(configuration: dict[str, Any]):
+def openai_client(**configuration: dict[str, Any]) -> openai.OpenAI:
     return openai.OpenAI(**configuration)
 
 
-# Define a predictor that depends on the previous artifact
-# which is automatically loaded and passed as an argument
+# Fetch a distant file from HTTPS, but it can be from any source: local, S3, GCS, Azure, FTP, HF Hub, etc.
+@artifact
+def dogo_picture(
+    picture: Annotated[
+        bytes,
+        "https://images.pexels.com/photos/220938/pexels-photo-220938.jpeg",
+        {"cache_strategy": "no_cache"},
+    ],
+) -> str:
+    return base64.b64encode(picture).decode("utf-8")
+
+
+# Define a predictor that depends on the previous artifacts
+# which are automatically loaded and passed as an argument
 
 
 @predictor
-def chat(
+def ask(
     message: str,
+    dogo_picture: Annotated[str, dogo_picture],
     client: Annotated[openai.OpenAI, openai_client, {"timeout": 5}],
     model: str = "gpt-4o-mini",
 ) -> str:
     response = client.chat.completions.create(
-        messages=[{"role": "user", "content": message}],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": message},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{dogo_picture}",
+                            "detail": "low",
+                        },
+                    },
+                ],
+            }
+        ],
         model=model,
     )
     return response.choices[0].message.content
 
 
 # daidai takes care of loading dependencies & injecting artifacts!
-# use directly
-print(chat("Hello, how are you?"))
-
-```
-
-A more detailed example with file dependencies, caching strategies, and lifecycle management:
-
-```python
-import pickle
-from pathlib import Path
-from typing import Annotated
-
-from sklearn.base import ClassifierMixin
-
-from daidai import ModelManager, artifact, predictor
-
-# Define an artifact with a file dependency
-# The file will be automatically downloaded and provided as a Path
-
-
-@artifact
-def my_model_pkl(model_path: Annotated[Path, "s3://my-bucket/model.pkl"]):
-    with open(model_path, "rb") as f:
-        return pickle.load(f)
-
-
-# Define a predictor that depends on the previous artifact
-# which is automatically loaded and passed as an argument
-
-
-@predictor
-def predict(text: str, my_model_pkl: Annotated[ClassifierMixin, my_model_pkl]):
-    return my_model_pkl.predict(text)
-
-
-# Use directly, daidai takes care of loading dependencies & injecting artifacts!
-result = predict("Hello world")
+print(ask("Hello, what's in the picture ?"))
+# >>> The picture features a dog with a black and white coat.
 
 # Or manage lifecycle with context manager for production usage
 # all predictors, artifacts and files are automatically loaded and cleaned up
-with ModelManager(preload=[predict]):
-    result1 = predict("First prediction")
-    result2 = predict("Second prediction")
+with ModelManager(preload=[ask]):
+    print(ask("Hello, what's in the picture ?"))
 
 # or manually pass dependencies
-model = my_model_pkl(model_path="local/path/model.pkl")
-result3 = predict("Third prediction", my_model_pkl=model)
+my_other_openai_client = openai.OpenAI(timeout=0.1)
+print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
+# >>> openai.APITimeoutError: Request timed out.
+# OOOPS, the new client timed out, of course :-)
 ```
 
 <!--
