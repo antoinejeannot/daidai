@@ -20,6 +20,23 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+VALID_TYPES = (
+    Path,
+    bytes,
+    str,
+    TextIO,
+    BinaryIO,
+)  # + (Generator[str], Generator[bytes])
+VALID_FORMAT_TYPES = (
+    type[Path]
+    | type[bytes]
+    | type[str]
+    | type[TextIO]
+    | type[BinaryIO]
+    | type[Generator[str]]
+    | type[Generator[bytes]]
+)
+
 
 def compute_target_path(
     protocol: str, source_uri: str, destination_dir: str, is_file: bool
@@ -288,15 +305,7 @@ class ModelManager:
 
     @staticmethod
     def _deserialize_local_file(
-        raw_path: str,
-        open_options: dict[str, Any],
-        format: type[str]
-        | type[bytes]
-        | type[Path]
-        | type[BinaryIO]
-        | type[TextIO]
-        | type[Generator[str]]
-        | type[Generator[bytes]],
+        raw_path: str, open_options: dict[str, Any], format: VALID_FORMAT_TYPES
     ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
         path = Path(raw_path).expanduser().resolve()
         if format is Path:
@@ -639,14 +648,9 @@ def component_decorator(kind: Kind):
                     raise ValueError(
                         f"Missing dependency configuration for parameter {param_name}"
                     )
+                origin_type = typing.get_origin(typing_args[0]) or typing_args[0]
                 if (
-                    typing_args[0] is Path
-                    or typing_args[0] is bytes
-                    or typing_args[0] is str
-                    or typing_args[0] is TextIO
-                    or typing_args[0] is BinaryIO
-                    or (typing.get_origin(typing_args[0]) or typing_args[0])
-                    is Generator
+                    typing_args[0] in VALID_TYPES or origin_type is Generator
                 ) and isinstance(typing_args[1], str):
                     files_uri = typing_args[1]
                     files_params = typing_args[2] if len(typing_args) > 2 else {}
