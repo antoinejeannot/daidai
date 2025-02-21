@@ -1,12 +1,15 @@
-<center>
-<img src="https://raw.githubusercontent.com/antoinejeannot/daidai/assets/logo.svg" alt="daidai logo" width="200px">
-</center>
+<p align="center">
+    <img src="https://raw.githubusercontent.com/antoinejeannot/daidai/assets/logo.svg" alt="daidai logo" width="200px">
+</p>
+<h1 align="center"> daidai </h1>
+<p align="center">
+  <em>Modern dependency & assets management library for MLOps</em>
+</p>
 
-# daidai
 
-**daidai** is a minimalist, type-safe dependency management system for AI/ML components that streamlines workflow development with intelligent caching and seamless file handling.
+**daidai** is a minimalist, type-safe dependency management system for AI/ML components that streamlines workflow development with dependency injection, intelligent caching and seamless file handling.
 
-Still very much WIP - please check back soon for updates! 🚧
+<marquee>🚧 Still very much WIP - please check back soon for updates 🚧</marquee>
 
 ## Why daidai?
 
@@ -21,6 +24,10 @@ Built for both rapid prototyping and production ML workflows, daidai:
 - 🧪 **Enables Testing** - Inject mock dependencies with ease for robust unit testing
 - 🎯 **Principle of Least Surprise** - Intuitive API that behaves exactly as you think it should work
 
+
+> **daidai** is named after the Japanese word for "orange" 🍊, a fruit that is both sweet and sour, just like the experience of managing dependencies in ML projects. <br/>It is being developed with user happiness in mind, while providing great flexibility and minimal boilerplate. It has been inspired by [pytest](https://github.com/pytest-dev/pytest), [modelkit](https://github.com/Cornerstone-OnDemand/modelkit), [dependency injection & testing](https://antoinejeannot.github.io/nuggets/dependency_injection_and_testing.html) principles and functional programming.
+
+
 ## Installation
 
 ```bash
@@ -28,35 +35,81 @@ pip install daidai
 ```
 
 ## Quick Start
-
 ```python
-from daidai import artifact, predictor, ModelManager
-from typing import Annotated
-from pathlib import Path
-import pickle
+from typing import Any
 
-# Define an artifact with a file dependency
-# The file will be automatically downloaded and provided as a Path
+import openai
+
+from daidai import ModelManager, artifact, predictor
+
+# Define an artifact which is a long-lived object
+# that can be used by multiple predictors
+
 
 @artifact
-def my_model_pkl(
-    model_path: Annotated[Path, "s3://my-bucket/model.pkl"]
-):
-    with open(model_path, "rb") as f:
-        return pickle.load(f)
+def openai_client(configuration: dict[str, Any]):
+    return openai.OpenAI(**configuration)
+
 
 # Define a predictor that depends on the previous artifact
 # which is automatically loaded and passed as an argument
 
+
 @predictor
-def predict(text: str, my_model_pkl):
+def chat(
+    message: str,
+    client: Annotated[openai.OpenAI, openai_client, {"timeout": 5}],
+    model: str = "gpt-4o-mini",
+) -> str:
+    response = client.chat.completions.create(
+        messages=[{"role": "user", "content": message}],
+        model="gpt-3.5-turbo",
+    )
+    return response.choices[0].message.content
+
+
+# daidai takes care of loading dependencies & injecting artifacts!
+# use directly
+print(chat("Hello, how are you?"))
+
+```
+
+A more detailed example with file dependencies, caching strategies, and lifecycle management:
+
+```python
+import pickle
+from pathlib import Path
+from typing import Annotated
+
+from sklearn.base import ClassifierMixin
+
+from daidai import ModelManager, artifact, predictor
+
+# Define an artifact with a file dependency
+# The file will be automatically downloaded and provided as a Path
+
+
+@artifact
+def my_model_pkl(model_path: Annotated[Path, "s3://my-bucket/model.pkl"]):
+    with open(model_path, "rb") as f:
+        return pickle.load(f)
+
+
+# Define a predictor that depends on the previous artifact
+# which is automatically loaded and passed as an argument
+
+
+@predictor
+def predict(text: str, my_model_pkl: Annotated[ClassifierMixin, my_model_pkl]):
     return my_model_pkl.predict(text)
+
 
 # Use directly, daidai takes care of loading dependencies & injecting artifacts!
 result = predict("Hello world")
 
 # Or manage lifecycle with context manager for production usage
-with ModelManager([predict]):
+# all predictors, artifacts and files are automatically loaded and cleaned up
+with ModelManager(preload=[predict]):
     result1 = predict("First prediction")
     result2 = predict("Second prediction")
 
