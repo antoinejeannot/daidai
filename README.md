@@ -20,6 +20,7 @@ Built for both rapid prototyping and production ML workflows, daidai:
 - 🛡️ **Prioritizes Safety** - Strong typing catches issues at compile time, not runtime
 - 🧪 **Enables Testing** - Inject mock dependencies with ease for robust unit testing
 - 🎯 **Principle of Least Surprise** - Intuitive API that behaves exactly as you think it should work
+
 ## Installation
 
 ```bash
@@ -35,27 +36,33 @@ from pathlib import Path
 import pickle
 
 # Define an artifact with a file dependency
+# The file will be automatically downloaded and provided as a Path
+
 @artifact
 def my_model_pkl(
     model_path: Annotated[Path, "s3://my-bucket/model.pkl"]
 ):
-    # The file will be automatically downloaded and provided as a Path
     with open(model_path, "rb") as f:
-        return pickle.load(f)  # return a model object with a predict method
+        return pickle.load(f)
 
-# Define a predictor that depends on the artifact
+# Define a predictor that depends on the previous artifact
+# which is automatically loaded and passed as an argument
+
 @predictor
 def predict(text: str, my_model_pkl):
-    # The artifact is automatically loaded and passed as an argument
     return my_model_pkl.predict(text)
 
-# Use directly, daidai injects the artifact
+# Use directly, daidai takes care of loading dependencies & injecting artifacts!
 result = predict("Hello world")
 
-# Or manage lifecycle with context manager
+# Or manage lifecycle with context manager for production usage
 with ModelManager([predict]):
     result1 = predict("First prediction")
-    result2 = predict("Second prediction")  # Uses cached model
+    result2 = predict("Second prediction")
+
+# or manually pass dependencies
+model = my_model_pkl(model_path="local/path/model.pkl")
+result3 = predict("Third prediction", my_model_pkl=model)
 ```
 
 <!--

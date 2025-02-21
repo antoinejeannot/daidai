@@ -6,6 +6,7 @@ import functools
 import inspect
 import os
 import shutil
+import threading
 import time
 import typing
 import urllib
@@ -113,6 +114,7 @@ class Metadata(typing.TypedDict):
 
 
 class MetaModelManager:
+    _global_lock: threading.RLock = threading.RLock()
     namespaces: typing.ClassVar = collections.defaultdict(
         lambda: collections.defaultdict(dict)
     )
@@ -285,7 +287,7 @@ class ModelManager:
                     MetaModelManager.functions[func_name], func_name
                 )
             except StopIteration:
-                ...
+                pass
             except Exception as e:
                 logger.error(
                     "Failed to clean up component",
