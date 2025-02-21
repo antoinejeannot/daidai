@@ -9,7 +9,7 @@
 
 **daidai** is a minimalist, type-safe dependency management system for AI/ML components that streamlines workflow development with dependency injection, intelligent caching and seamless file handling.
 
-<marquee>🚧 Still very much WIP - please check back soon for updates 🚧</marquee>
+🚧 daidai is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, but feel free to give it a try :) 🚧
 
 ## Why daidai?
 
@@ -31,7 +31,8 @@ Built for both rapid prototyping and production ML workflows, daidai:
 ## Installation
 
 ```bash
-pip install daidai
+pip install git+https://github.com/antoinejeannot/daidai.git
+# soon: pip install daidai
 ```
 
 ## Quick Start
@@ -63,7 +64,7 @@ def chat(
 ) -> str:
     response = client.chat.completions.create(
         messages=[{"role": "user", "content": message}],
-        model="gpt-3.5-turbo",
+        model=model,
     )
     return response.choices[0].message.content
 
