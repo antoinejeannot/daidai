@@ -77,7 +77,7 @@ def compute_target_path(
     return target_dir, target, source_uri
 
 
-class Kind(enum.Enum):
+class ComponentType(enum.Enum):
     PREDICTOR = "predictor"
     ARTIFACT = "artifact"
 
@@ -88,13 +88,6 @@ class FileDependencyCacheStrategy(enum.Enum):
         "on_disk_temporary"
     )
     NO_CACHE: Annotated[str, "Do not cache the file"] = "no_cache"
-    # IN_MEMORY: Annotated[str, "Load in RAM"] = "in_memory"
-    # IN_MEMORY_STREAM: Annotated[str, "Load in RAM as a stream"] = "in_memory_stream"
-
-
-class FileDependencyScope(enum.Enum):
-    FUNCTION: Annotated[str, "clean up when the function is done"] = "function"
-    GLOBAL: Annotated[str, "clean up when the program exits"] = "global"
 
 
 class FileDependencyParams(typing.TypedDict):
@@ -110,13 +103,12 @@ CURRENT_NAMESPACE = contextvars.ContextVar("CURRENT_NAMESPACE", default="global"
 
 
 class Metadata(typing.TypedDict):
-    kind: Kind
+    kind: ComponentType
     dependencies: list[
         tuple[str, Callable, dict[str, typing.Any]]
     ]  # (param_name, dep_func, dep_func_args)
     files: list[tuple[str, str, dict[str, typing.Any]]]
     # (param_name, files_uri, files_args)
-    dependencies_to_resolve: set[str]
     function: Callable
 
 
@@ -206,12 +198,14 @@ class ModelManager:
             artifacts=[
                 f
                 for f in artifacts_or_predictors
-                if MetaModelManager.functions[f.__name__]["kind"] == Kind.ARTIFACT
+                if MetaModelManager.functions[f.__name__]["kind"]
+                == ComponentType.ARTIFACT
             ],
             predictors=[
                 f.__name__
                 for f in artifacts_or_predictors
-                if MetaModelManager.functions[f.__name__]["kind"] == Kind.PREDICTOR
+                if MetaModelManager.functions[f.__name__]["kind"]
+                == ComponentType.PREDICTOR
             ],
             namespace=current_namespace,
         )
@@ -305,9 +299,9 @@ class ModelManager:
 
     @staticmethod
     def _deserialize_local_file(
-        raw_path: str, open_options: dict[str, Any], format: VALID_FORMAT_TYPES
+        path: str, open_options: dict[str, Any], format: VALID_FORMAT_TYPES
     ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
-        path = Path(raw_path).expanduser().resolve()
+        path = Path(path).expanduser().resolve()
         if format is Path:
             return path
         if format is bytes:
@@ -370,13 +364,13 @@ class ModelManager:
             FileDependencyCacheStrategy.ON_DISK,
             FileDependencyCacheStrategy.ON_DISK_TEMP,
         ):
-            if (
-                files_params["cache_strategy"]
-                is FileDependencyCacheStrategy.ON_DISK_TEMP
-                and deserialization["format"] is Path
-            ):
+            if files_params[
+                "cache_strategy"
+            ] is FileDependencyCacheStrategy.ON_DISK_TEMP and deserialization[
+                "format"
+            ] in (Path, TextIO, BinaryIO):
                 raise ValueError(
-                    "Cannot use temporary cache strategy with Path deserialization"
+                    "Cannot use temporary cache strategy with Path, TextIO or BinaryIO deserialization"
                 )
             cache_dir = (
                 "~/.lightkit_cache/"
@@ -390,7 +384,7 @@ class ModelManager:
             try:
                 fs.cp(source_uri, target, recursive=not is_file)
                 return ModelManager._deserialize_local_file(
-                    raw_path, open_options, deserialization["format"]
+                    target, open_options, deserialization["format"]
                 )
             except Exception as e:
                 logger.error(
@@ -491,26 +485,14 @@ class ModelManager:
                 )
             prepared_args[param_name] = file_dependency
         # For predictors, we don't cache the function itself, just its artifact dependencies
-        if kind == Kind.PREDICTOR:
+        if kind == ComponentType.PREDICTOR:
             dependencies = MetaModelManager.functions[func_name]["dependencies"]
-            resolved_functions = [
-                (
-                    dep_func_name,
-                    MetaModelManager.functions[dep_func_name]["function"],
-                    None,
-                )
-                for dep_func_name in MetaModelManager.functions[func_name][
-                    "dependencies_to_resolve"
-                ]
-                if dep_func_name in MetaModelManager.functions
-            ]
             logger.debug(
                 "Dependency resolution status",
                 predictor=func_name,
                 resolved_count=len(dependencies),
                 resolved_names=[name for name, _, _ in dependencies],
             )
-            dependencies.extend(resolved_functions)
             for param_name, dep_func, dep_func_args in dependencies:
                 if param_name in config:
                     logger.debug(
@@ -539,27 +521,15 @@ class ModelManager:
             )
             return prepared_predictor
 
-        if kind != Kind.ARTIFACT:
+        if kind != ComponentType.ARTIFACT:
             raise ValueError(f"Invalid kind {kind}")
         dependencies = MetaModelManager.functions[func_name]["dependencies"]
-        resolved_functions = [
-            (
-                dep_func_name,
-                MetaModelManager.functions[dep_func_name]["function"],
-                None,
-            )
-            for dep_func_name in MetaModelManager.functions[func_name][
-                "dependencies_to_resolve"
-            ]
-            if dep_func_name in MetaModelManager.functions
-        ]
         logger.debug(
             "Dependency resolution status",
             predictor=func_name,
             resolved_count=len(dependencies),
             resolved_names=[name for name, _, _ in dependencies],
         )
-        dependencies.extend(resolved_functions)
         for param_name, dep_func, dep_func_args in dependencies:
             if param_name in config:
                 logger.debug(
@@ -614,7 +584,7 @@ class ModelManager:
             raise
 
 
-def component_decorator(kind: Kind):
+def component_decorator(kind: ComponentType):
     """
     A common decorator factory for both artifacts and predictors.
 
@@ -627,7 +597,6 @@ def component_decorator(kind: Kind):
         MetaModelManager.functions[func.__name__] = Metadata(
             dependencies=[],
             kind=kind,
-            dependencies_to_resolve=set(),
             function=func,
             files=[],
         )
@@ -636,72 +605,64 @@ def component_decorator(kind: Kind):
 
         # Process parameters to set up dependency resolution.
         for param_name in sig.parameters:
-            if param_name in hints:
-                annotation = hints[param_name]
-                if typing.get_origin(annotation) is not Annotated:
-                    MetaModelManager.functions[func.__name__][
-                        "dependencies_to_resolve"
-                    ].add(param_name)
-                    continue
-                typing_args = typing.get_args(annotation)
-                if len(typing_args) < 2:
+            if param_name not in hints:
+                continue
+            annotation = hints[param_name]
+            if typing.get_origin(annotation) is not Annotated:
+                continue
+            typing_args = typing.get_args(annotation)
+            if len(typing_args) < 2:
+                raise ValueError(
+                    f"Missing dependency configuration for parameter {param_name}"
+                )
+            origin_type = typing.get_origin(typing_args[0]) or typing_args[0]
+            if (
+                typing_args[0] in VALID_TYPES or origin_type is Generator
+            ) and isinstance(typing_args[1], str):
+                files_uri = typing_args[1]
+                files_params = typing_args[2] if len(typing_args) > 2 else {}
+                open_options = files_params.setdefault("open_options", {})
+                deserialization = files_params.setdefault("deserialization", {})
+                if deserialization.get("format") not in (None, typing_args[0]):
+                    raise TypeError(
+                        f"Deserialization format {deserialization.get('format')} "
+                        f"does not match the expected type {typing_args[0]}"
+                    )
+                deserialization["format"] = typing_args[0]
+                if typing_args[0] is Path and open_options.get("mode"):
                     raise ValueError(
-                        f"Missing dependency configuration for parameter {param_name}"
+                        "Cannot specify mode for Path objects. Use 'str' or 'bytes' instead."
                     )
-                origin_type = typing.get_origin(typing_args[0]) or typing_args[0]
-                if (
-                    typing_args[0] in VALID_TYPES or origin_type is Generator
-                ) and isinstance(typing_args[1], str):
-                    files_uri = typing_args[1]
-                    files_params = typing_args[2] if len(typing_args) > 2 else {}
-                    open_options = files_params.setdefault("open_options", {})
-                    deserialization = files_params.setdefault("deserialization", {})
-                    if deserialization.get("format") not in (None, typing_args[0]):
-                        raise TypeError(
-                            f"Deserialization format {deserialization.get('format')} "
-                            f"does not match the expected type {typing_args[0]}"
-                        )
-                    deserialization["format"] = typing_args[0]
-                    if typing_args[0] is Path and open_options.get("mode"):
+                if typing_args[0] is bytes or typing_args[0] is BinaryIO:
+                    open_options.setdefault("mode", "rb")
+                    if open_options["mode"] != "rb":
                         raise ValueError(
-                            "Cannot specify mode for Path objects. Use 'str' or 'bytes' instead."
+                            "Cannot read bytes in text mode. Use 'rb' instead."
                         )
-                    if typing_args[0] is bytes or typing_args[0] is BinaryIO:
-                        open_options.setdefault("mode", "rb")
-                        if open_options["mode"] != "rb":
-                            raise ValueError(
-                                "Cannot read bytes in text mode. Use 'rb' instead."
-                            )
-                        open_options["mode"] = "rb"
-                    elif typing_args[0] is str or typing_args[0] is TextIO:
-                        open_options.setdefault("mode", "r")
-                        if open_options["mode"] != "r":
-                            raise ValueError(
-                                "Cannot read text in binary mode. Use 'r' instead."
-                            )
-                    MetaModelManager.functions[func.__name__]["files"].append(
-                        (param_name, files_uri, files_params)
-                    )
-                    continue
+                    open_options["mode"] = "rb"
+                elif typing_args[0] is str or typing_args[0] is TextIO:
+                    open_options.setdefault("mode", "r")
+                    if open_options["mode"] != "r":
+                        raise ValueError(
+                            "Cannot read text in binary mode. Use 'r' instead."
+                        )
+                MetaModelManager.functions[func.__name__]["files"].append(
+                    (param_name, files_uri, files_params)
+                )
+                continue
 
-                dependency = typing_args[1:]
-                dep_func: Callable = dependency[0]
-                def_sig = inspect.signature(dep_func)
-                dep_defaults = {
-                    k: v.default
-                    for k, v in def_sig.parameters.items()
-                    if v.default is not inspect.Parameter.empty
-                }
-                dep_func_args: dict[str, Any] = (
-                    dependency[1] if len(dependency) > 1 else {}
-                )
-                MetaModelManager.functions[func.__name__]["dependencies"].append(
-                    (param_name, dep_func, dep_defaults | dep_func_args)
-                )
-            else:
-                MetaModelManager.functions[func.__name__][
-                    "dependencies_to_resolve"
-                ].add(param_name)
+            dependency = typing_args[1:]
+            dep_func: Callable = dependency[0]
+            def_sig = inspect.signature(dep_func)
+            dep_defaults = {
+                k: v.default
+                for k, v in def_sig.parameters.items()
+                if v.default is not inspect.Parameter.empty
+            }
+            dep_func_args: dict[str, Any] = dependency[1] if len(dependency) > 1 else {}
+            MetaModelManager.functions[func.__name__]["dependencies"].append(
+                (param_name, dep_func, dep_defaults | dep_func_args)
+            )
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -716,7 +677,7 @@ def component_decorator(kind: Kind):
                 config,
             )
             # For predictors, call the returned partial immediately.
-            return result() if kind == Kind.PREDICTOR else result
+            return result() if kind == ComponentType.PREDICTOR else result
 
         wrapper.__wrapped_component__ = True
         return wrapper
@@ -724,5 +685,5 @@ def component_decorator(kind: Kind):
     return decorator
 
 
-artifact = component_decorator(Kind.ARTIFACT)
-predictor = component_decorator(Kind.PREDICTOR)
+artifact = component_decorator(ComponentType.ARTIFACT)
+predictor = component_decorator(ComponentType.PREDICTOR)
