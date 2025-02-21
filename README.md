@@ -1,7 +1,7 @@
 <p align="center">
     <img src="https://raw.githubusercontent.com/antoinejeannot/daidai/assets/logo.svg" alt="daidai logo" width="200px">
 </p>
-<h1 align="center"> daidai </h1>
+<h1 align="center"> daidai 🍊</h1>
 <p align="center">
   <em>Modern dependency & assets management library for MLOps</em>
 </p>
@@ -24,18 +24,16 @@ Built for both rapid prototyping and production ML workflows, daidai:
 - 🧪 **Enables Testing** - Inject mock dependencies with ease for robust unit testing
 - 🎯 **Principle of Least Surprise** - Intuitive API that behaves exactly as you think it should work
 
-
 > **daidai** is named after the Japanese word for "orange" 🍊, a fruit that is both sweet and sour, just like the experience of managing dependencies in ML projects. <br/>It is being developed with user happiness in mind, while providing great flexibility and minimal boilerplate. It has been inspired by [pytest](https://github.com/pytest-dev/pytest), [modelkit](https://github.com/Cornerstone-OnDemand/modelkit), [dependency injection & testing](https://antoinejeannot.github.io/nuggets/dependency_injection_and_testing.html) principles and functional programming.
-
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/antoinejeannot/daidai.git
-# soon: pip install daidai
+pip install daidai
 ```
 
 ## Quick Start
+
 ```python
 from typing import Any
 
