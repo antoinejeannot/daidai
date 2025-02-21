@@ -5,7 +5,7 @@ import enum
 import functools
 import inspect
 import os
-import tempfile
+import shutil
 import time
 import typing
 import urllib
@@ -70,8 +70,9 @@ class FileDependencyCacheStrategy(enum.Enum):
     ON_DISK_TEMP: Annotated[str, "Fetch and temporarily store on disk"] = (
         "on_disk_temporary"
     )
-    IN_MEMORY: Annotated[str, "Load in RAM"] = "in_memory"
-    IN_MEMORY_STREAM: Annotated[str, "Load in RAM as a stream"] = "in_memory_stream"
+    NO_CACHE: Annotated[str, "Do not cache the file"] = "no_cache"
+    # IN_MEMORY: Annotated[str, "Load in RAM"] = "in_memory"
+    # IN_MEMORY_STREAM: Annotated[str, "Load in RAM as a stream"] = "in_memory_stream"
 
 
 class FileDependencyScope(enum.Enum):
@@ -84,7 +85,8 @@ class FileDependencyParams(typing.TypedDict):
         dict[str, Any], "see fsspec storage options for more details"
     ]
     open_options: Annotated[dict[str, Any], "see fsspec open options for more details"]
-    strategy: Annotated[FileDependencyCacheStrategy, "cache strategy to use"]
+    deserialization: Annotated[dict[str, Any], "deserialization options for the file"]
+    cache_strategy: Annotated[FileDependencyCacheStrategy, "cache strategy to use"]
 
 
 CURRENT_NAMESPACE = contextvars.ContextVar("CURRENT_NAMESPACE", default="global")
@@ -285,101 +287,138 @@ class ModelManager:
         namespace.clear()
 
     @staticmethod
+    def _deserialize_local_file(
+        raw_path: str,
+        open_options: dict[str, Any],
+        format: type[str]
+        | type[bytes]
+        | type[Path]
+        | type[BinaryIO]
+        | type[TextIO]
+        | type[Generator[str]]
+        | type[Generator[bytes]],
+    ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
+        path = Path(raw_path).expanduser().resolve()
+        if format is Path:
+            return path
+        if format is bytes:
+            return path.read_bytes()
+        if format is str:
+            return path.read_text()
+        if format is BinaryIO:
+            return path.open(**({"mode": "rb"} | open_options))
+        if format is TextIO:
+            return path.open(**({"mode": "r"} | open_options))
+        if (typing.get_origin(format) or format) is Generator:
+
+            def _stream(mode: Literal["r", "rb"]):
+                with path.open(**({"mode": mode} | open_options)) as stream:
+                    yield from stream
+
+            format_arg = typing.get_args(format)
+            if format_arg and format_arg[0] is str:
+                return _stream("r")
+            if format_arg and format_arg[0] is bytes:
+                return _stream("rb")
+            if format_arg:
+                raise ValueError(
+                    f"Generator format should be 'str' or 'bytes', not {format_arg[0]!s}"
+                )
+            if open_options.get("mode") == "r":
+                return _stream("r")
+            if open_options.get("mode") == "rb":
+                return _stream("rb")
+            if open_options.get("mode"):
+                raise ValueError(
+                    f"Generator mode should be 'r' or 'rb', not {open_options['mode']!s}"
+                )
+            raise ValueError(
+                "Generator should send type: 'str' or 'bytes', i.e.: Generator[str] or Generator[bytes]"
+            )
+        raise ValueError(f"Unsupported deserialization format {format}")
+
+    @staticmethod
     def _load_file_dependency(
         uri: str, files_params: FileDependencyParams
-    ) -> (
-        str
-        | bytes
-        | Path
-        | BinaryIO
-        | TextIO
-        | Generator[str, None, None]
-        | Generator[bytes, None, None]
-    ):
-        def _handle_mode(
-            raw_path: str, mode: Literal["r"] | Literal["rb"] | None
-        ) -> str | bytes | Path:
-            path = Path(raw_path).expanduser().resolve()
-            match mode:
-                case "r":
-                    return path.read_text()
-                case "rb":
-                    return path.read_bytes()
-                case _:
-                    return path
-
+    ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
         options = fsspec.utils.infer_storage_options(uri)
-        files_params["strategy"] = (
-            FileDependencyCacheStrategy(files_params["strategy"])
-            if "strategy" in files_params
-            else FileDependencyCacheStrategy.ON_DISK
-        )
         protocol = options.get("protocol", "file")
         raw_path = options.get("path") or uri  # Fall back to the full URI if needed
-        fs = fsspec.filesystem(protocol, **files_params.get("storage_options", {}))
-        open_options = files_params.get("open_options", {})
+        fs = fsspec.filesystem(protocol, **files_params["storage_options"])
+        open_options = files_params["open_options"]
+        deserialization = files_params["deserialization"]
         is_dir = fs.isdir(raw_path) if hasattr(fs, "isdir") else False
         is_file = fs.isfile(raw_path) if hasattr(fs, "isfile") else not is_dir
         if is_dir and is_file:
-            raise ValueError(f"Path {uri} is both a file and a directory")
-        if is_dir and files_params["strategy"] == FileDependencyCacheStrategy.IN_MEMORY:
-            raise ValueError(f"Cannot cache a directory in memory: {uri}")
-        if is_dir and open_options.get("mode"):
-            raise ValueError(
-                f"Cannot specify mode for directories: {uri} is a directory"
-            )
-        target_dir, target, source_uri = compute_target_path(
-            protocol, raw_path, "~/.lightkit_cache/", is_file
-        )
-        match (
-            protocol,
-            files_params["strategy"],
+            raise ValueError(f"Cannot determine if {uri} is a file or a directory")
+        if is_dir and (
+            open_options.get("mode") or deserialization["format"] is not Path
         ):
-            case _, FileDependencyCacheStrategy.IN_MEMORY_STREAM:
-
-                def _stream():
-                    with fsspec.open(source_uri, **open_options) as stream:
-                        yield from stream
-
-                return _stream()
-            case "file", _:
-                return _handle_mode(raw_path, open_options.get("mode"))
-            case _, FileDependencyCacheStrategy.ON_DISK:
-                os.makedirs(target_dir, exist_ok=True)
-                try:
-                    fs.cp(source_uri, target, recursive=not is_file)
-                except Exception as e:
-                    logger.error(
-                        "Failed to copy file",
-                        source=source_uri,
-                        target=target,
-                        error=str(e),
-                        error_type=e.__class__.__name__,
-                    )
-                    raise
-                return _handle_mode(target, open_options.get("mode"))
-            case _, FileDependencyCacheStrategy.IN_MEMORY:
-                with fsspec.open(source_uri, **open_options) as f:
-                    return f.read()
-            case (
-                _,
-                FileDependencyCacheStrategy.ON_DISK_TEMP,
+            raise ValueError(
+                f"Cannot specify read mode or format for directories: {uri} is a directory"
+            )
+        if files_params["cache_strategy"] in (
+            FileDependencyCacheStrategy.ON_DISK,
+            FileDependencyCacheStrategy.ON_DISK_TEMP,
+        ):
+            if (
+                files_params["cache_strategy"]
+                is FileDependencyCacheStrategy.ON_DISK_TEMP
+                and deserialization["format"] is Path
             ):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    target_dir, target, source_uri = compute_target_path(
-                        protocol, raw_path, temp_dir, is_file
-                    )
-                    os.makedirs(target_dir, exist_ok=True)
-                    fs.cp(source_uri, target, recursive=not is_file)
-                    return _handle_mode(target, open_options.get("mode"))
-            case _, _:
-                logger.error(
-                    "Feature not yet implemented",
-                    uri=uri,
-                    strategy=files_params["strategy"],
-                    files_params=files_params,
+                raise ValueError(
+                    "Cannot use temporary cache strategy with Path deserialization"
                 )
-                raise NotImplementedError("Feature not yet implemented")
+            cache_dir = (
+                "~/.lightkit_cache/"
+                if files_params["cache_strategy"] == FileDependencyCacheStrategy.ON_DISK
+                else "~/.lightkit_cache_temp/"
+            )
+            target_dir, target, source_uri = compute_target_path(
+                protocol, raw_path, cache_dir, is_file
+            )
+            os.makedirs(target_dir, exist_ok=True)
+            try:
+                fs.cp(source_uri, target, recursive=not is_file)
+                return ModelManager._deserialize_local_file(
+                    raw_path, open_options, deserialization["format"]
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to copy file",
+                    source=source_uri,
+                    target=target,
+                    error=str(e),
+                    error_type=e.__class__.__name__,
+                )
+                raise
+            finally:
+                if (
+                    files_params["cache_strategy"]
+                    == FileDependencyCacheStrategy.ON_DISK_TEMP
+                ):
+                    shutil.rmtree(target_dir, ignore_errors=True)
+        if files_params["cache_strategy"] == FileDependencyCacheStrategy.NO_CACHE:
+            if protocol == "file":
+                return ModelManager._deserialize_local_file(
+                    raw_path, open_options, deserialization["format"]
+                )
+            if (
+                deserialization["format"] is not str
+                and deserialization["format"] is not bytes
+            ):
+                raise ValueError(
+                    "Cannot use NO_CACHE strategy with non-str or non-bytes deserialization when the file is remote"
+                )
+            with fsspec.open(source_uri, **open_options) as f:
+                return f.read()
+        logger.error(
+            "Feature not yet implemented",
+            uri=uri,
+            cache_strategy=files_params["cache_strategy"],
+            files_params=files_params,
+        )
+        raise NotImplementedError("Feature not yet implemented")
 
     @staticmethod
     def _load_artifact_or_predictor(
@@ -417,9 +456,9 @@ class ModelManager:
                 dependency=uri,
                 params=files_params,
             )
-            files_params["strategy"] = (
-                FileDependencyCacheStrategy(files_params["strategy"])
-                if "strategy" in files_params
+            files_params["cache_strategy"] = (
+                FileDependencyCacheStrategy(files_params["cache_strategy"])
+                if "cache_strategy" in files_params
                 else FileDependencyCacheStrategy.ON_DISK
             )
             files_params["storage_options"] = files_params.get("storage_options") or {}
@@ -595,35 +634,42 @@ def component_decorator(kind: Kind):
                         "dependencies_to_resolve"
                     ].add(param_name)
                     continue
-                args = typing.get_args(annotation)
-                if len(args) < 2:
+                typing_args = typing.get_args(annotation)
+                if len(typing_args) < 2:
                     raise ValueError(
                         f"Missing dependency configuration for parameter {param_name}"
                     )
-                if typing.get_origin(args[0]) is Generator:
-                    args = (typing.get_args(args[0])[0], *args[1:])
                 if (
-                    args[0] is Path
-                    or args[0] is bytes
-                    or args[0] is str
-                    or args[0] is TextIO
-                    or args[0] is BinaryIO
-                ) and isinstance(args[1], str):
-                    files_uri = args[1]
-                    files_params = args[2] if len(args) > 2 else {}
+                    typing_args[0] is Path
+                    or typing_args[0] is bytes
+                    or typing_args[0] is str
+                    or typing_args[0] is TextIO
+                    or typing_args[0] is BinaryIO
+                    or (typing.get_origin(typing_args[0]) or typing_args[0])
+                    is Generator
+                ) and isinstance(typing_args[1], str):
+                    files_uri = typing_args[1]
+                    files_params = typing_args[2] if len(typing_args) > 2 else {}
                     open_options = files_params.setdefault("open_options", {})
-                    if args[0] is Path and open_options.get("mode"):
+                    deserialization = files_params.setdefault("deserialization", {})
+                    if deserialization.get("format") not in (None, typing_args[0]):
+                        raise TypeError(
+                            f"Deserialization format {deserialization.get('format')} "
+                            f"does not match the expected type {typing_args[0]}"
+                        )
+                    deserialization["format"] = typing_args[0]
+                    if typing_args[0] is Path and open_options.get("mode"):
                         raise ValueError(
                             "Cannot specify mode for Path objects. Use 'str' or 'bytes' instead."
                         )
-                    if args[0] is bytes or args[0] is BinaryIO:
+                    if typing_args[0] is bytes or typing_args[0] is BinaryIO:
                         open_options.setdefault("mode", "rb")
                         if open_options["mode"] != "rb":
                             raise ValueError(
                                 "Cannot read bytes in text mode. Use 'rb' instead."
                             )
                         open_options["mode"] = "rb"
-                    elif args[0] is str or args[0] is TextIO:
+                    elif typing_args[0] is str or typing_args[0] is TextIO:
                         open_options.setdefault("mode", "r")
                         if open_options["mode"] != "r":
                             raise ValueError(
@@ -634,7 +680,7 @@ def component_decorator(kind: Kind):
                     )
                     continue
 
-                dependency = args[1:]
+                dependency = typing_args[1:]
                 dep_func: Callable = dependency[0]
                 def_sig = inspect.signature(dep_func)
                 dep_defaults = {
