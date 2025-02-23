@@ -18,3 +18,15 @@ class Metadata(typing.TypedDict):
     clean_up: (
         typing.Generator | None
     )  # Only for artifacts using generators for init & cleanup
+
+
+class ModelManagerError(Exception):
+    """Base exception for ModelManager errors"""
+
+    ...
+
+
+class ComponentLoadError(ModelManagerError):
+    """Raised when component loading fails"""
+
+    ...
