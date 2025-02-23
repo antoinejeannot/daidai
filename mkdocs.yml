@@ -4,3 +4,26 @@ site_description: "Modern dependency & assets management library for MLOps "
 site_author: Antoine Jeannot
 theme:
   name: material
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+      primary: black
+      accent: amber
+
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to dark mode
+      primary: black
+      accent: amber
+
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/toggle-switch-off-outline
+        name: Switch to system preference
+      primary: black
+      accent: amber
