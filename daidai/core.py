@@ -51,39 +51,22 @@ VALID_FORMAT_TYPES = (
 def compute_target_path(
     protocol: str, source_uri: str, destination_dir: str, is_file: bool
 ) -> tuple[str, str, str]:
-    """
-    Compute the local cache directory, final target path, and source URI for the given raw path.
-    """
-    if protocol == "file":
-        # For local files, make sure we have an absolute path
-        abs_path = Path(source_uri).absolute()
-        destination_dir = str(Path(destination_dir).expanduser().resolve())
-        # Use parts (skip the root on Unix; adjust if needed for Windows)
-        parts = abs_path.parts[1:]
-        if is_file:
-            target_dir = os.path.join(destination_dir, "local", *parts[:-1])
-            target = os.path.join(target_dir, abs_path.name)
-            source_uri = abs_path.as_uri()
-        else:
-            target_dir = os.path.join(destination_dir, "local", *parts)
-            target = os.path.join(target_dir, "")
-            source_uri = abs_path.as_uri() + "/"
-        return target_dir, target, source_uri
+    destination_dir = str(Path(destination_dir).expanduser().resolve())
 
-    # For remote files, use urllib to parse and then rebuild a cache path.
-    parsed = urllib.parse.urlparse(source_uri)
-    # Split the path and remove empty parts
-    path_parts = [p for p in parsed.path.split("/") if p]
-    # If there are query parameters and this is a file, append them to the filename.
-    if parsed.query and is_file:
-        path_parts[-1] = f"{path_parts[-1]}?{parsed.query}"
-    if is_file:
-        target_dir = os.path.join(destination_dir, protocol, *path_parts[:-1])
-        target = os.path.join(target_dir, path_parts[-1])
+    if protocol == "file":
+        abs_path = Path(source_uri).resolve()
+        source_uri = abs_path.as_uri()
+        parts = abs_path.parts[1:]
     else:
-        target_dir = os.path.join(destination_dir, protocol, *path_parts)
-        target = os.path.join(target_dir, "")
-    # Rebuild the source URI (adding a trailing slash for directories)
+        parsed = urllib.parse.urlparse(source_uri)
+        parts = [p for p in parsed.path.split("/") if p]
+        if is_file and parsed.query:
+            parts[-1] += f"?{parsed.query}"
+
+    target_dir = os.path.join(
+        destination_dir, protocol, *parts[:-1] if is_file else parts
+    )
+    target = os.path.join(target_dir, parts[-1]) if is_file else target_dir
     return target_dir, target, source_uri
 
 
