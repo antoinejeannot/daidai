@@ -5,23 +5,24 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     environment: release
     steps:
         - uses: actions/checkout@v4
+          with:
+            fetch-depth: 0  # for release notes
         - uses: actions/setup-python@v5
           with:
             python-version: "3.10"
         - name: Run linter
           uses: pre-commit/action@v3.0.1
         - name: Install dependencies
-          run: |
-            pip install uv
-            uv venv --python 3.10
-            source .venv/bin/activate
-            uv pip install -e ".[dev, publish]"
+          run: pip install -e ".[dev, publish]"
         - name: Run tests
           run: pytest -s -vv
         - name: Build package
@@ -32,4 +33,12 @@ jobs:
             TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
           run: |
             twine check dist/*
-            twine upload dist/*
+        - name: Create Release
+          uses: actions/create-release@v1
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          with:
+            tag_name: ${{ github.ref_name }}
+            release_name: ${{ github.ref_name }} 🍊
+            draft: false
+            prerelease: false
