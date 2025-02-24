@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 class DaiDaiConfig:
     cache_dir: Path
     cache_dir_tmp: Path
+    force_download: bool
     log_level: str
     cache_strategy: CacheStrategy
 
@@ -35,6 +36,9 @@ class DaiDaiConfig:
             "DAIDAI_CACHE_DIR_TMP",
             Path(tempfile.mkdtemp(prefix="daidai-")),
             build=cache_strategy == CacheStrategy.ON_DISK_TEMP,
+        )
+        force_download = cls._validate_force_download_from_env(
+            "DAIDAI_FORCE_DOWNLOAD", False
         )
 
         def clean_up_tmp_dir():
@@ -55,12 +59,14 @@ class DaiDaiConfig:
             cache_dir_tmp=cache_dir_tmp,
             log_level=log_level,
             cache_strategy=cache_strategy,
+            force_download=force_download,
         )
         return cls(
             cache_dir=cache_dir,
             cache_dir_tmp=cache_dir_tmp,
             log_level=log_level,
             cache_strategy=cache_strategy,
+            force_download=force_download,
         )
 
     @staticmethod
@@ -104,6 +110,19 @@ class DaiDaiConfig:
                 f"Invalid cache strategy: {cache_strategy}. "
                 f"Valid options are: {', '.join(s.value for s in CacheStrategy)}"
             ) from e
+
+    @staticmethod
+    def _validate_force_download_from_env(env_var: str, default: bool) -> bool:
+        """Parse en validate force download"""
+        force_download = os.getenv(env_var)
+        if not force_download:
+            return default
+        if force_download.lower() in ("true", "1"):
+            return True
+        if force_download.lower() in ("false", "0"):
+            return False
+        logger.error(f"Invalid value for force download: {force_download}")
+        raise ValueError(f"Invalid value for force download: {force_download}")
 
 
 CONFIG = DaiDaiConfig.from_env()

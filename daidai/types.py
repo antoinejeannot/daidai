@@ -42,6 +42,7 @@ class FileDependencyParams(TypedDict):
     open_options: Annotated[dict[str, Any], "see fsspec open options for more details"]
     deserialization: Annotated[dict[str, Any], "deserialization options for the file"]
     cache_strategy: Annotated[FileDependencyCacheStrategy, "cache strategy to use"]
+    force_download: Annotated[bool, "force download the file(s)"]
 
 
 VALID_TYPES = (

@@ -8,6 +8,7 @@ import typing
 from collections.abc import Callable, Generator, Iterable
 from typing import Any, Final
 
+from daidai.config import CONFIG
 from daidai.files import FileDependencyCacheStrategy, load_file_dependency
 from daidai.logs import get_logger
 from daidai.types import ComponentLoadError, ComponentType, Metadata
@@ -262,13 +263,16 @@ class ModelManager:
             with GLOBAL_LOCK:
                 files_params["cache_strategy"] = (
                     FileDependencyCacheStrategy(files_params["cache_strategy"])
-                    if "cache_strategy" in files_params
-                    else FileDependencyCacheStrategy.ON_DISK
+                    if files_params.get("cache_strategy")
+                    else CONFIG.cache_strategy
                 )
                 files_params["storage_options"] = (
                     files_params.get("storage_options") or {}
                 )
                 files_params["open_options"] = files_params.get("open_options") or {}
+                files_params["force_download"] = (
+                    files_params.get("force_download") or CONFIG.force_download
+                )
             cache_key = _create_cache_key(files_params)
             with GLOBAL_LOCK:
                 file_dependency = _get_from_cache(

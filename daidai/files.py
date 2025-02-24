@@ -73,8 +73,8 @@ def _compute_target_path(
         if is_file and parsed.query:
             parts[-1] += f"?{parsed.query}"
 
-    target_dir = destination_dir / protocol / Path(*parts[:-1] if is_file else parts)
-    target = target_dir / parts[-1] if is_file else target_dir
+    target_dir = destination_dir / protocol / Path(*parts[:-1])
+    target = target_dir / parts[-1]
     return target_dir, target, source_uri
 
 
@@ -108,10 +108,25 @@ def load_file_dependency(
         target_dir, target, source_uri = _compute_target_path(
             protocol, raw_path, cache_dir, is_file
         )
-        target_dir.mkdir(parents=True, exist_ok=True)
         try:
+            if is_file and (files_params["force_download"] or not target.exists()):
+                target_dir.mkdir(parents=True, exist_ok=True)
+                fs.cp(source_uri, str(target))
+            elif is_dir and files_params["force_download"]:
+                target.mkdir(parents=True, exist_ok=True)
+                fs.cp(source_uri, str(target_dir), recursive=True)
+            elif is_dir and not target.exists():
+                target.mkdir(parents=True, exist_ok=True)
+                try:
+                    fs.rsync(
+                        source_uri.rstrip("/"),
+                        str(target).rstrip("/"),
+                    )
+                except AttributeError:
+                    # depends on the protocol
+                    fs.cp(source_uri, str(target_dir), recursive=True)
             if not target.exists():
-                fs.cp(source_uri, str(target), recursive=not is_file)
+                raise FileNotFoundError(f"Failed to copy {uri} to {target}")
             return _deserialize_local_file(
                 target, open_options, deserialization["format"]
             )
