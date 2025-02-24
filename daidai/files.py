@@ -81,6 +81,7 @@ def _compute_target_path(
 def load_file_dependency(
     uri: str, files_params: FileDependencyParams
 ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
+    # TODO: properly close files when format is BinaryIO or TextIO using hook
     options = fsspec.utils.infer_storage_options(uri)
     protocol = options.get("protocol", "file")
     raw_path = options.get("path") or uri  # Fall back to the full URI if needed
@@ -99,16 +100,6 @@ def load_file_dependency(
         FileDependencyCacheStrategy.ON_DISK,
         FileDependencyCacheStrategy.ON_DISK_TEMP,
     ):
-        if files_params[
-            "cache_strategy"
-        ] is FileDependencyCacheStrategy.ON_DISK_TEMP and deserialization["format"] in (
-            Path,
-            TextIO,
-            BinaryIO,
-        ):
-            raise ValueError(
-                "Cannot use temporary cache strategy with Path, TextIO or BinaryIO deserialization"
-            )
         cache_dir: Path = (
             CONFIG.cache_dir
             if files_params["cache_strategy"] == FileDependencyCacheStrategy.ON_DISK
