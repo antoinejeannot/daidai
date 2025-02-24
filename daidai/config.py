@@ -1,5 +1,8 @@
+import atexit
 import logging
 import os
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,14 +33,29 @@ class DaiDaiConfig:
         )
         cache_dir_tmp = cls._validate_path_from_env(
             "DAIDAI_CACHE_DIR_TMP",
-            Path.home() / ".daidai" / "cache_tmp",
+            Path(tempfile.mkdtemp(prefix="daidai-")),
             build=cache_strategy == CacheStrategy.ON_DISK_TEMP,
         )
+
+        def clean_up_tmp_dir():
+            try:
+                shutil.rmtree(cache_dir_tmp, ignore_errors=False)
+                logger.info("Temporary cache directory cleaned up", path=cache_dir_tmp)
+            except OSError:
+                pass
+
+        atexit.register(clean_up_tmp_dir)
         log_level = cls._validate_log_level_from_env("DAIDAI_LOG_LEVEL", "INFO")
         cache_strategy = cls._validate_cache_strategy_from_env(
             "DAIDAI_DEFAULT_CACHE_STRATEGY", CacheStrategy.ON_DISK
         )
-
+        logger.info(
+            "Configuration initialized",
+            cache_dir=cache_dir,
+            cache_dir_tmp=cache_dir_tmp,
+            log_level=log_level,
+            cache_strategy=cache_strategy,
+        )
         return cls(
             cache_dir=cache_dir,
             cache_dir_tmp=cache_dir_tmp,

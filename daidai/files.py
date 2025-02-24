@@ -1,4 +1,3 @@
-import shutil
 import typing
 import urllib.parse
 from collections.abc import Generator
@@ -120,7 +119,8 @@ def load_file_dependency(
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         try:
-            fs.cp(source_uri, str(target), recursive=not is_file)
+            if not target.exists():
+                fs.cp(source_uri, str(target), recursive=not is_file)
             return _deserialize_local_file(
                 target, open_options, deserialization["format"]
             )
@@ -133,12 +133,6 @@ def load_file_dependency(
                 error_type=e.__class__.__name__,
             )
             raise
-        finally:
-            if (
-                files_params["cache_strategy"]
-                == FileDependencyCacheStrategy.ON_DISK_TEMP
-            ):
-                shutil.rmtree(target_dir, ignore_errors=True)
     if files_params["cache_strategy"] == FileDependencyCacheStrategy.NO_CACHE:
         if protocol == "file":
             return _deserialize_local_file(
