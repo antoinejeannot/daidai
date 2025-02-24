@@ -35,8 +35,9 @@ extra = [
 ]
 dev = [
     "pre-commit>=4.0.1",
-    "ruff==0.9.4",
+    "ruff==0.9.7",
     "pytest>=8.3.4",
+    "bandit[toml]>=1.8.3",
 ]
 publish = [
     "build>=1.2.2.post1",
@@ -92,3 +93,9 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["daidai"]
+
+[tool.pytest.ini_options]
+addopts = "-s -vv --durations=0"
+
+[tool.bandit]
+exclude_dirs = ["tests"]
