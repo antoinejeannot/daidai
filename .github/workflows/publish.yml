@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: "3.10"
+        - name: Run linter
+          uses: pre-commit/action@v3.0.1
+        - name: Install dependencies
+          run: |
+            pip install uv
+            uv venv --python 3.10
+            source .venv/bin/activate
+            uv pip install -e ".[dev, publish]"
+        - name: Run tests
+          run: pytest -s -vv
+        - name: Build package
+          run: python -m build
+        - name: Publish package
+          env:
+            TWINE_USERNAME: __token__
+            TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+          run: |
+            twine check dist/*
+            twine upload dist/*
