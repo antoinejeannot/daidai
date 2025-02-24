@@ -1,5 +1,12 @@
 import enum
 import typing
+from collections.abc import Generator
+from pathlib import Path
+from typing import Annotated, Any, BinaryIO, TextIO, TypedDict
+
+from daidai.logs import get_logger
+
+logger = get_logger(__name__)
 
 
 class ComponentType(enum.Enum):
@@ -20,7 +27,48 @@ class Metadata(typing.TypedDict):
     )  # Only for artifacts using generators for init & cleanup
 
 
-class ModelManagerError(Exception):
+class FileDependencyCacheStrategy(enum.Enum):
+    ON_DISK: Annotated[str, "Fetch and store on permanently on disk"] = "on_disk"
+    ON_DISK_TEMP: Annotated[str, "Fetch and temporarily store on disk"] = (
+        "on_disk_temporary"
+    )
+    NO_CACHE: Annotated[str, "Do not cache the file"] = "no_cache"
+
+
+class FileDependencyParams(TypedDict):
+    storage_options: Annotated[
+        dict[str, Any], "see fsspec storage options for more details"
+    ]
+    open_options: Annotated[dict[str, Any], "see fsspec open options for more details"]
+    deserialization: Annotated[dict[str, Any], "deserialization options for the file"]
+    cache_strategy: Annotated[FileDependencyCacheStrategy, "cache strategy to use"]
+
+
+VALID_TYPES = (
+    Path,
+    bytes,
+    str,
+    TextIO,
+    BinaryIO,
+)  # + (Generator[str], Generator[bytes])
+VALID_FORMAT_TYPES = (
+    type[Path]
+    | type[bytes]
+    | type[str]
+    | type[TextIO]
+    | type[BinaryIO]
+    | type[Generator[str]]
+    | type[Generator[bytes]]
+)
+
+
+class DaiDaiError(Exception):
+    """Base exception for DaiDai errors"""
+
+    ...
+
+
+class ModelManagerError(DaiDaiError):
     """Base exception for ModelManager errors"""
 
     ...

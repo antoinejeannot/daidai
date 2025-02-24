@@ -1,52 +1,21 @@
-import enum
-import os
 import shutil
 import typing
-import urllib
+import urllib.parse
 from collections.abc import Generator
 from pathlib import Path
-from typing import Annotated, Any, BinaryIO, Literal, TextIO, TypedDict
+from typing import Any, BinaryIO, Literal, TextIO
 
 import fsspec
 
+from daidai.config import CONFIG
 from daidai.logs import get_logger
+from daidai.types import (
+    VALID_FORMAT_TYPES,
+    FileDependencyCacheStrategy,
+    FileDependencyParams,
+)
 
 logger = get_logger(__name__)
-
-
-class FileDependencyCacheStrategy(enum.Enum):
-    ON_DISK: Annotated[str, "Fetch and store on permanently on disk"] = "on_disk"
-    ON_DISK_TEMP: Annotated[str, "Fetch and temporarily store on disk"] = (
-        "on_disk_temporary"
-    )
-    NO_CACHE: Annotated[str, "Do not cache the file"] = "no_cache"
-
-
-class FileDependencyParams(TypedDict):
-    storage_options: Annotated[
-        dict[str, Any], "see fsspec storage options for more details"
-    ]
-    open_options: Annotated[dict[str, Any], "see fsspec open options for more details"]
-    deserialization: Annotated[dict[str, Any], "deserialization options for the file"]
-    cache_strategy: Annotated[FileDependencyCacheStrategy, "cache strategy to use"]
-
-
-VALID_TYPES = (
-    Path,
-    bytes,
-    str,
-    TextIO,
-    BinaryIO,
-)  # + (Generator[str], Generator[bytes])
-VALID_FORMAT_TYPES = (
-    type[Path]
-    | type[bytes]
-    | type[str]
-    | type[TextIO]
-    | type[BinaryIO]
-    | type[Generator[str]]
-    | type[Generator[bytes]]
-)
 
 
 def _deserialize_local_file(
@@ -93,12 +62,10 @@ def _deserialize_local_file(
 
 
 def _compute_target_path(
-    protocol: str, source_uri: str, destination_dir: str, is_file: bool
-) -> tuple[str, str, str]:
-    destination_dir = str(Path(destination_dir).expanduser().resolve())
-
+    protocol: str, source_uri: str, destination_dir: Path, is_file: bool
+) -> tuple[Path, Path, str]:
     if protocol == "file":
-        abs_path = Path(source_uri).resolve()
+        abs_path = Path(source_uri).expanduser().resolve()
         source_uri = abs_path.as_uri()
         parts = abs_path.parts[1:]
     else:
@@ -107,10 +74,8 @@ def _compute_target_path(
         if is_file and parsed.query:
             parts[-1] += f"?{parsed.query}"
 
-    target_dir = os.path.join(
-        destination_dir, protocol, *parts[:-1] if is_file else parts
-    )
-    target = os.path.join(target_dir, parts[-1]) if is_file else target_dir
+    target_dir = destination_dir / protocol / Path(*parts[:-1] if is_file else parts)
+    target = target_dir / parts[-1] if is_file else target_dir
     return target_dir, target, source_uri
 
 
@@ -145,17 +110,17 @@ def load_file_dependency(
             raise ValueError(
                 "Cannot use temporary cache strategy with Path, TextIO or BinaryIO deserialization"
             )
-        cache_dir = (
-            "~/.lightkit_cache/"
+        cache_dir: Path = (
+            CONFIG.cache_dir
             if files_params["cache_strategy"] == FileDependencyCacheStrategy.ON_DISK
-            else "~/.lightkit_cache_temp/"
+            else CONFIG.cache_dir_tmp
         )
         target_dir, target, source_uri = _compute_target_path(
             protocol, raw_path, cache_dir, is_file
         )
-        os.makedirs(target_dir, exist_ok=True)
+        target_dir.mkdir(parents=True, exist_ok=True)
         try:
-            fs.cp(source_uri, target, recursive=not is_file)
+            fs.cp(source_uri, str(target), recursive=not is_file)
             return _deserialize_local_file(
                 target, open_options, deserialization["format"]
             )

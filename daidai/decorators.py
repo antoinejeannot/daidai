@@ -5,10 +5,9 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Annotated, Any, BinaryIO, TextIO
 
-from daidai.files import VALID_TYPES
 from daidai.logs import get_logger
 from daidai.managers import CURRENT_NAMESPACE, Metadata, MetaModelManager, ModelManager
-from daidai.types import ComponentType
+from daidai.types import VALID_TYPES, ComponentType
 
 logger = get_logger(__name__)
 

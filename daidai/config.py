@@ -1,0 +1,91 @@
+import logging
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from daidai.logs import get_logger
+from daidai.types import (
+    FileDependencyCacheStrategy as CacheStrategy,
+)
+
+logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class DaiDaiConfig:
+    cache_dir: Path
+    cache_dir_tmp: Path
+    log_level: str
+    cache_strategy: CacheStrategy
+
+    @classmethod
+    def from_env(cls) -> "DaiDaiConfig":
+        cache_strategy = cls._validate_cache_strategy_from_env(
+            "DAIDAI_DEFAULT_CACHE_STRATEGY", CacheStrategy.ON_DISK
+        )
+        cache_dir = cls._validate_path_from_env(
+            "DAIDAI_CACHE_DIR",
+            Path.home() / ".daidai" / "cache",
+            build=cache_strategy == CacheStrategy.ON_DISK,
+        )
+        cache_dir_tmp = cls._validate_path_from_env(
+            "DAIDAI_CACHE_DIR_TMP",
+            Path.home() / ".daidai" / "cache_tmp",
+            build=cache_strategy == CacheStrategy.ON_DISK_TEMP,
+        )
+        log_level = cls._validate_log_level_from_env("DAIDAI_LOG_LEVEL", "INFO")
+        cache_strategy = cls._validate_cache_strategy_from_env(
+            "DAIDAI_DEFAULT_CACHE_STRATEGY", CacheStrategy.ON_DISK
+        )
+
+        return cls(
+            cache_dir=cache_dir,
+            cache_dir_tmp=cache_dir_tmp,
+            log_level=log_level,
+            cache_strategy=cache_strategy,
+        )
+
+    @staticmethod
+    def _validate_path_from_env(env_var: str, default: Path, build: bool) -> Path:
+        path_str = os.getenv(env_var)
+        path = Path(path_str) if path_str else default
+        path = path.expanduser().resolve().absolute()
+        if build and not path.exists():
+            logger.info(f"Creating directory: {path}")
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.error(
+                    "Failed to create directory during config initialization",
+                    env_var=env_var,
+                    error=str(e),
+                    path=str(path),
+                )
+                raise
+        return path
+
+    @staticmethod
+    def _validate_log_level_from_env(env_var: str, default: str) -> str:
+        level = os.getenv(env_var, default).upper()
+        if level not in logging._nameToLevel:
+            logger.error(f"Invalid log level: {level}")
+            raise ValueError(f"Invalid log level: {level}")
+        return level
+
+    @staticmethod
+    def _validate_cache_strategy_from_env(
+        env_var: str, default: CacheStrategy
+    ) -> CacheStrategy:
+        """Parse and validate cache strategy."""
+        cache_strategy = os.getenv(env_var)
+        try:
+            return CacheStrategy(cache_strategy.lower()) if cache_strategy else default
+        except (ValueError, AttributeError) as e:
+            logger.error(f"Invalid cache strategy: {cache_strategy}")
+            raise ValueError(
+                f"Invalid cache strategy: {cache_strategy}. "
+                f"Valid options are: {', '.join(s.value for s in CacheStrategy)}"
+            ) from e
+
+
+CONFIG = DaiDaiConfig.from_env()
