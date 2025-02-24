@@ -1,10 +1,13 @@
+import contextlib
+import threading
 import typing
 import urllib.parse
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, TextIO
+from weakref import WeakValueDictionary
 
-import fsspec
+import fsspec.utils
 
 from daidai.config import CONFIG
 from daidai.logs import get_logger
@@ -15,6 +18,15 @@ from daidai.types import (
 )
 
 logger = get_logger(__name__)
+
+
+_file_locks = WeakValueDictionary()
+_file_locks_lock = threading.RLock()  # Lock for the locks themselves
+
+
+def get_file_lock(file_path: str) -> threading.RLock:
+    with _file_locks_lock:
+        return _file_locks.setdefault(file_path, threading.RLock())
 
 
 def _deserialize_local_file(
@@ -81,10 +93,19 @@ def _compute_target_path(
 def load_file_dependency(
     uri: str, files_params: FileDependencyParams
 ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
-    # TODO: properly close files when format is BinaryIO or TextIO using hook
     options = fsspec.utils.infer_storage_options(uri)
     protocol = options.get("protocol", "file")
     raw_path = options.get("path") or uri  # Fall back to the full URI if needed
+
+    lock_key = f"{protocol}://{raw_path}"
+    file_lock = get_file_lock(lock_key)
+    with file_lock:
+        return _load_file_dependency_impl(uri, files_params, protocol, raw_path)
+
+
+def _load_file_dependency_impl(
+    uri: str, files_params: FileDependencyParams, protocol: str, raw_path: str
+) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
     fs = fsspec.filesystem(protocol, **files_params["storage_options"])
     open_options = files_params["open_options"]
     deserialization = files_params["deserialization"]
@@ -100,59 +121,13 @@ def load_file_dependency(
         FileDependencyCacheStrategy.ON_DISK,
         FileDependencyCacheStrategy.ON_DISK_TEMP,
     ):
-        cache_dir: Path = (
-            CONFIG.cache_dir
-            if files_params["cache_strategy"] == FileDependencyCacheStrategy.ON_DISK
-            else CONFIG.cache_dir_tmp
+        return _handle_disk_cache(
+            protocol, raw_path, fs, files_params, is_file, open_options, deserialization
         )
-        target_dir, target, source_uri = _compute_target_path(
-            protocol, raw_path, cache_dir, is_file
-        )
-        try:
-            if is_file and (files_params["force_download"] or not target.exists()):
-                target_dir.mkdir(parents=True, exist_ok=True)
-                fs.cp(source_uri, str(target))
-            elif is_dir and files_params["force_download"]:
-                target.mkdir(parents=True, exist_ok=True)
-                fs.cp(source_uri, str(target_dir), recursive=True)
-            elif is_dir and not target.exists():
-                target.mkdir(parents=True, exist_ok=True)
-                try:
-                    fs.rsync(
-                        source_uri.rstrip("/"),
-                        str(target).rstrip("/"),
-                    )
-                except AttributeError:
-                    # depends on the protocol
-                    fs.cp(source_uri, str(target_dir), recursive=True)
-            if not target.exists():
-                raise FileNotFoundError(f"Failed to copy {uri} to {target}")
-            return _deserialize_local_file(
-                target, open_options, deserialization["format"]
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to copy file",
-                source=source_uri,
-                target=target,
-                error=str(e),
-                error_type=e.__class__.__name__,
-            )
-            raise
+
     if files_params["cache_strategy"] == FileDependencyCacheStrategy.NO_CACHE:
-        if protocol == "file":
-            return _deserialize_local_file(
-                raw_path, open_options, deserialization["format"]
-            )
-        if (
-            deserialization["format"] is not str
-            and deserialization["format"] is not bytes
-        ):
-            raise ValueError(
-                "Cannot use NO_CACHE strategy with non-str or non-bytes deserialization when the file is remote"
-            )
-        with fsspec.open(raw_path, **open_options) as f:
-            return f.read()
+        return _handle_no_cache(protocol, raw_path, open_options, deserialization)
+
     logger.error(
         "Feature not yet implemented",
         uri=uri,
@@ -160,3 +135,66 @@ def load_file_dependency(
         files_params=files_params,
     )
     raise NotImplementedError("Feature not yet implemented")
+
+
+def _handle_disk_cache(
+    protocol: str,
+    raw_path: str,
+    fs,
+    files_params: FileDependencyParams,
+    is_file: bool,
+    open_options: dict,
+    deserialization: dict,
+) -> Any:
+    cache_dir: Path = (
+        CONFIG.cache_dir
+        if files_params["cache_strategy"] == FileDependencyCacheStrategy.ON_DISK
+        else CONFIG.cache_dir_tmp
+    )
+    target_dir, target, source_uri = _compute_target_path(
+        protocol, raw_path, cache_dir, is_file
+    )
+    success = target.with_suffix(target.suffix + ".SUCCESS")
+    need_download = (
+        files_params["force_download"] or not success.exists() or not target.exists()
+    )
+    try:
+        if not need_download:
+            logger.debug("Cache hit, using cached file", target=target)
+        else:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if is_file:
+                fs.cp(source_uri, str(target))
+            else:
+                fs.cp(source_uri, str(target_dir), recursive=True)
+            success.touch()
+        return _deserialize_local_file(target, open_options, deserialization["format"])
+    except Exception as e:
+        with contextlib.suppress(Exception):
+            success.unlink(missing_ok=True)
+        logger.error(
+            "Failed to copy file(s)",
+            source=source_uri,
+            target=target,
+            error=str(e),
+            error_type=e.__class__.__name__,
+        )
+        raise
+
+
+def _handle_no_cache(
+    protocol: str, raw_path: str, open_options: dict, deserialization: dict
+) -> Any:
+    """Handle no-cache strategy."""
+    if protocol == "file":
+        return _deserialize_local_file(
+            raw_path, open_options, deserialization["format"]
+        )
+
+    if deserialization["format"] is not str and deserialization["format"] is not bytes:
+        raise ValueError(
+            "Cannot use NO_CACHE strategy with non-str or non-bytes deserialization when the file is remote"
+        )
+
+    with fsspec.open(raw_path, **open_options) as f:
+        return f.read()

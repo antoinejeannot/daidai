@@ -49,7 +49,7 @@ class DaiDaiConfig:
                 pass
 
         atexit.register(clean_up_tmp_dir)
-        log_level = cls._validate_log_level_from_env("DAIDAI_LOG_LEVEL", "INFO")
+        log_level = cls._validate_log_level_from_env("DAIDAI_LOG_LEVEL", "WARNING")
         cache_strategy = cls._validate_cache_strategy_from_env(
             "DAIDAI_DEFAULT_CACHE_STRATEGY", CacheStrategy.ON_DISK
         )

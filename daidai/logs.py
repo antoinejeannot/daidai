@@ -26,9 +26,8 @@ def get_logger(name):
 
     # Only configure if needed
     if not logger.hasHandlers() and not logger.parent.hasHandlers():
-        log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
-        log_level = getattr(logging, log_level_name, logging.INFO)
-
+        log_level_name = os.environ.get("DAIDAI_LOG_LEVEL", "WARNING").upper()
+        log_level = getattr(logging, log_level_name)
         handler = logging.StreamHandler()
         formatter = logging.Formatter(
             "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
