@@ -123,10 +123,57 @@ print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 - [ ] Add tests (unit, integration, e2e)
 - [ ] Clean things up now that the UX has landed
 - [ ] Add docs
-- [ ] Handle multi-threading & concurrency with locks
+- [x] Use lock for file downloading
 - [ ] Add support for async components
 - [ ] Add a cookbook with common patterns & recipes
 - [ ] Enjoy the fruits of my labor 🍊
+
+##  🧵 Concurrency & Parallelism
+
+While file operations are protected against race conditions  (downloading, caching etc.), other operations **are not** due to the lazy nature of component loading.
+As such, **daidai 🍊** cannot be considered thread-safe (and does not plan to, at least in the short term).
+
+However, there are ways to work around this limitation for multi-threaded applications:
+
+1. Create a shared `ModelManager` instance for all threads, but ensure that components are loaded before the threads are started:
+
+```python
+@artifact
+def model(model_path: Annotated[Path, "s3://bucket/model.pkl"]) -> Model:
+    return pickle.load("model_a.pkl")
+
+@predictor
+def sentiment_classifier(text: str, model: Annotated[Model, model]):
+    return model.predict(text)
+
+
+with ModelManager(preload=[sentiment_classifier]) as manager:
+    # sentiment_classifier and its dependencies (model) are loaded and
+    # read to be used by all threads without issues
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(worker_function, data_chunks))
+```
+
+2. Create a separate `ModelManager` instance for each thread, each will benefit from the same disk cache but will not share components
+
+```python
+# same predictor & artifact definitions as above
+
+def worker_function(data_chunk):
+    # Each thread has its own manager and namespace
+    with ModelManager(namespace=str(threading.get_ident())) as manager:
+        return my_predictor(data)
+
+with ThreadPoolExecutor(max_workers=4) as executor:
+    results = list(executor.map(worker_function, data_chunks))
+```
+
+A few notes:
+
+- Creating separate ModelManager instances (approach #2) might lead to duplicate loading of the same components in memory across threads, while preloading (approach #1)
+ensures components are shared but requires knowing & loading all components in advance.
+- For most applications, approach #2 (separate managers) provides the safest experience, while approach #1 (preloading) is more memory-efficient and simple to implement for applications with large models.
+- Both approaches benefit from disk caching, so model files are only downloaded once regardless of how many ModelManager instances you create.
 
 <!--
 

@@ -2,11 +2,10 @@ import collections
 import contextlib
 import contextvars
 import functools
-import threading
 import time
 import typing
 from collections.abc import Callable, Generator, Iterable
-from typing import Any, Final
+from typing import Any
 
 from daidai.config import CONFIG
 from daidai.files import FileDependencyCacheStrategy, load_file_dependency
@@ -23,7 +22,6 @@ except ImportError:
     has_pympler = False
     logger.info("pympler is not installed, memory usage will not be logged")
 
-GLOBAL_LOCK: Final = threading.RLock()
 CURRENT_NAMESPACE = contextvars.ContextVar("CURRENT_NAMESPACE", default="global")
 
 
@@ -57,8 +55,7 @@ def _get_from_cache(
     func_name: str,
     cache_key: frozenset,
 ) -> Any | None:
-    with GLOBAL_LOCK:
-        return namespace.get(func_name, {}).get(cache_key)
+    return namespace.get(func_name, {}).get(cache_key)
 
 
 def _cache_value(
@@ -67,8 +64,7 @@ def _cache_value(
     cache_key: frozenset,
     value: Any,
 ) -> None:
-    with GLOBAL_LOCK:
-        namespace.setdefault(func_name, {})[cache_key] = value
+    namespace.setdefault(func_name, {})[cache_key] = value
 
 
 class ModelManager:
@@ -132,24 +128,22 @@ class ModelManager:
 
     def _load(self):
         def _fill_exit_stack():
-            with GLOBAL_LOCK:
-                cleanup_funcs = [
-                    (meta, func_name)
-                    for func_name, meta in MetaModelManager.functions.items()
-                    if meta.get("clean_up")
-                ]
-                for func_name, meta in cleanup_funcs:
-                    if meta.get("clean_up"):
-                        self._exit_stack.callback(
-                            lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
-                        )
-
-        with GLOBAL_LOCK:
-            for func_name, meta in MetaModelManager.functions.items():
+            cleanup_funcs = [
+                (meta, func_name)
+                for func_name, meta in MetaModelManager.functions.items()
+                if meta.get("clean_up")
+            ]
+            for func_name, meta in cleanup_funcs:
                 if meta.get("clean_up"):
                     self._exit_stack.callback(
                         lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
                     )
+
+        for func_name, meta in MetaModelManager.functions.items():
+            if meta.get("clean_up"):
+                self._exit_stack.callback(
+                    lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
+                )
         try:
             self.load(self.artifacts_or_predictors)
         except Exception as e:
@@ -196,15 +190,12 @@ class ModelManager:
     def close(
         namespace: dict[str, dict[frozenset, Any]] | None = None,
     ):
-        with GLOBAL_LOCK:
-            namespace = (
-                namespace or MetaModelManager.namespaces[CURRENT_NAMESPACE.get()]
-            )
-            cleanup_items = [
-                func_name
-                for func_name, metadata in MetaModelManager.functions.items()
-                if metadata.get("clean_up")
-            ]
+        namespace = namespace or MetaModelManager.namespaces[CURRENT_NAMESPACE.get()]
+        cleanup_items = [
+            func_name
+            for func_name, metadata in MetaModelManager.functions.items()
+            if metadata.get("clean_up")
+        ]
         for func_name in cleanup_items:
             try:
                 ModelManager._cleanup_artifact(
@@ -219,10 +210,9 @@ class ModelManager:
                     error=str(e),
                     error_type=e.__class__.__name__,
                 )
-        with GLOBAL_LOCK:
-            for func_name, _ in cleanup_items:
-                MetaModelManager.functions.pop(func_name, None)
-            namespace.clear()
+        for func_name, _ in cleanup_items:
+            MetaModelManager.functions.pop(func_name, None)
+        namespace.clear()
 
     @staticmethod
     def _load_artifact_or_predictor(
@@ -231,27 +221,24 @@ class ModelManager:
         config: dict[str, Any] | None = None,
     ) -> Callable | Generator:
         t0 = time.perf_counter()
-        with GLOBAL_LOCK:
-            kind = MetaModelManager.functions[func.__name__]["kind"]
+        kind = MetaModelManager.functions[func.__name__]["kind"]
         prepared_args = {}
         config = config or {}
         config_cache_key = _create_cache_key(config)
-        with GLOBAL_LOCK:
-            if cached := _get_from_cache(namespace, func.__name__, config_cache_key):
-                logger.debug(
-                    "Using cached component",
-                    kind=kind.value,
-                    name=func.__name__,
-                    cache_key=str(config_cache_key),
-                    elapsed=round(time.perf_counter() - t0, 9),
-                )
-                return cached
+        if cached := _get_from_cache(namespace, func.__name__, config_cache_key):
+            logger.debug(
+                "Using cached component",
+                kind=kind.value,
+                name=func.__name__,
+                cache_key=str(config_cache_key),
+                elapsed=round(time.perf_counter() - t0, 9),
+            )
+            return cached
         logger.debug(
             "Loading component", name=func.__name__, kind=kind.value, config=config
         )
         # whether the function is an artifact or a predictor, it can have files dependencies
-        with GLOBAL_LOCK:
-            files = MetaModelManager.functions[func.__name__]["files"]
+        files = MetaModelManager.functions[func.__name__]["files"]
         for param_name, uri, files_params in files:
             logger.debug(
                 "Processing files dependency",
@@ -260,24 +247,20 @@ class ModelManager:
                 dependency=uri,
                 params=files_params,
             )
-            with GLOBAL_LOCK:
-                files_params["cache_strategy"] = (
-                    FileDependencyCacheStrategy(files_params["cache_strategy"])
-                    if files_params.get("cache_strategy")
-                    else CONFIG.cache_strategy
-                )
-                files_params["storage_options"] = (
-                    files_params.get("storage_options") or {}
-                )
-                files_params["open_options"] = files_params.get("open_options") or {}
-                files_params["force_download"] = (
-                    files_params.get("force_download") or CONFIG.force_download
-                )
+            files_params["cache_strategy"] = (
+                FileDependencyCacheStrategy(files_params["cache_strategy"])
+                if files_params.get("cache_strategy")
+                else CONFIG.cache_strategy
+            )
+            files_params["storage_options"] = files_params.get("storage_options") or {}
+            files_params["open_options"] = files_params.get("open_options") or {}
+            files_params["force_download"] = (
+                files_params.get("force_download") or CONFIG.force_download
+            )
             cache_key = _create_cache_key(files_params)
-            with GLOBAL_LOCK:
-                file_dependency = _get_from_cache(
-                    namespace, "file/" + uri, cache_key
-                )  # file/ to avoid collision with function names
+            file_dependency = _get_from_cache(
+                namespace, "file/" + uri, cache_key
+            )  # file/ to avoid collision with function names
             if file_dependency:
                 logger.debug(
                     "Using cached file",
@@ -291,8 +274,7 @@ class ModelManager:
             prepared_args[param_name] = file_dependency
         # For predictors, we don't cache the function itself, just its artifact dependencies
         if kind == ComponentType.PREDICTOR:
-            with GLOBAL_LOCK:
-                dependencies = MetaModelManager.functions[func.__name__]["dependencies"]
+            dependencies = MetaModelManager.functions[func.__name__]["dependencies"]
             logger.debug(
                 "Dependency resolution status",
                 predictor=func.__name__,
@@ -363,10 +345,8 @@ class ModelManager:
                 else func(**final_args)
             )
             if isinstance(result, Generator):
-                with GLOBAL_LOCK:
-                    MetaModelManager.functions[func.__name__]["clean_up"] = result
+                MetaModelManager.functions[func.__name__]["clean_up"] = result
                 result = next(result)
-            # ModelManager._cache_value(namespace, func_name, cache_key, result)
             _cache_value(namespace, func.__name__, config_cache_key, result)
             logger.debug(
                 "Component loaded",
