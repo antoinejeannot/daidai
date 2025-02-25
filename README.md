@@ -123,15 +123,15 @@ print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 - [ ] Add tests (unit, integration, e2e)
 - [ ] Clean things up now that the UX has landed
 - [ ] Add docs
-- [x] Use lock for file downloading
+- [x] Protect file operations for parallelism / concurrency
 - [ ] Add support for async components
 - [ ] Add a cookbook with common patterns & recipes
 - [ ] Enjoy the fruits of my labor 🍊
 
-##  🧵 Concurrency & Parallelism
+## 🧵 Concurrency & Parallelism
 
 While file operations are protected against race conditions  (downloading, caching etc.), other operations **are not** due to the lazy nature of component loading.
-As such, **daidai 🍊** cannot be considered thread-safe (and does not plan to, at least in the short term).
+As such, **daidai 🍊** cannot be considered thread-safe and does not plan to in the short term.
 
 However, there are ways to work around this limitation for multi-threaded applications:
 
@@ -140,7 +140,8 @@ However, there are ways to work around this limitation for multi-threaded applic
 ```python
 @artifact
 def model(model_path: Annotated[Path, "s3://bucket/model.pkl"]) -> Model:
-    return pickle.load("model_a.pkl")
+    with open(model_path, "rb") as f:
+        return pickle.load(f)
 
 @predictor
 def sentiment_classifier(text: str, model: Annotated[Model, model]):
