@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Annotated, Any, BinaryIO, TextIO
 
 from daidai.logs import get_logger
-from daidai.managers import CURRENT_NAMESPACE, Metadata, MetaModelManager, ModelManager
+from daidai.managers import (
+    Metadata,
+    _current_namespace,
+    _functions,
+    _load_one_artifact_or_predictor,
+    _namespaces,
+)
 from daidai.types import VALID_TYPES, ComponentType
 
 logger = get_logger(__name__)
@@ -18,7 +24,7 @@ R = typing.TypeVar("R")
 def component_decorator(kind: ComponentType):
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         # Register the function and its metadata.
-        MetaModelManager.functions[func.__name__] = Metadata(
+        _functions[func.__name__] = Metadata(
             dependencies=[],
             kind=kind,
             function=func,
@@ -71,7 +77,7 @@ def component_decorator(kind: ComponentType):
                         raise ValueError(
                             "Cannot read text in binary mode. Use 'r' instead."
                         )
-                MetaModelManager.functions[func.__name__]["files"].append(
+                _functions[func.__name__]["files"].append(
                     (param_name, files_uri, files_params)
                 )
                 continue
@@ -85,7 +91,7 @@ def component_decorator(kind: ComponentType):
                 if v.default is not inspect.Parameter.empty
             }
             dep_func_args: dict[str, Any] = dependency[1] if len(dependency) > 1 else {}
-            MetaModelManager.functions[func.__name__]["dependencies"].append(
+            _functions[func.__name__]["dependencies"].append(
                 (param_name, dep_func, dep_defaults | dep_func_args)
             )
 
@@ -96,9 +102,9 @@ def component_decorator(kind: ComponentType):
             bound_args = sig.bind_partial(*args, **kwargs)
             bound_args.apply_defaults()
             config = dict(bound_args.arguments)
-            current_namespace = CURRENT_NAMESPACE.get()
-            result = ModelManager._load_artifact_or_predictor(
-                MetaModelManager.namespaces[current_namespace],
+            current_namespace = _current_namespace.get()
+            result = _load_one_artifact_or_predictor(
+                _namespaces[current_namespace],
                 func,
                 config,
             )

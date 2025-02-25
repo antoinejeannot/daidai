@@ -3,7 +3,6 @@ import contextlib
 import contextvars
 import functools
 import time
-import typing
 from collections.abc import Callable, Generator, Iterable
 from typing import Any
 
@@ -22,14 +21,9 @@ except ImportError:
     has_pympler = False
     logger.info("pympler is not installed, memory usage will not be logged")
 
-CURRENT_NAMESPACE = contextvars.ContextVar("CURRENT_NAMESPACE", default="global")
-
-
-class MetaModelManager:
-    namespaces: typing.ClassVar = collections.defaultdict(
-        lambda: collections.defaultdict(dict)
-    )
-    functions: typing.ClassVar[dict[str, Metadata]] = {}
+_current_namespace = contextvars.ContextVar("CURRENT_NAMESPACE", default="global")
+_namespaces = collections.defaultdict(lambda: collections.defaultdict(dict))
+_functions: dict[str, Metadata] = {}
 
 
 def _create_cache_key(args: dict[str, Any] | None) -> frozenset:
@@ -75,241 +69,139 @@ class ModelManager:
         | None = None,
         namespace: str | None = None,
     ):
-        self.namespace = namespace or CURRENT_NAMESPACE.get()
-        self.namespace_token = CURRENT_NAMESPACE.set(self.namespace)
+        self.namespace = namespace or _current_namespace.get()
+        self._namespace_token = _current_namespace.set(self.namespace)
         self._exit_stack = contextlib.ExitStack()
-        if not isinstance(preload, dict):
+        if isinstance(preload, dict):
+            pass
+        elif isinstance(preload, Generator | Callable):
+            preload = {preload: None}
+        elif preload is None or (isinstance(preload, Iterable)):
             preload = dict.fromkeys(preload or [], None)
+        else:
+            raise TypeError(
+                f"Invalid type for artifacts_or_predictors: {type(preload)}"
+            )
         self.artifacts_or_predictors = preload
         if preload:
             self._load()
 
-    @functools.singledispatchmethod
-    @staticmethod
-    def load(*artifacts_or_predictors: Callable | Generator):
-        """Load multiple artifacts or predictors without configs."""
-        return ModelManager.load(dict.fromkeys(artifacts_or_predictors, None))
+    @property
+    def _namespace(self):
+        return _namespaces[self.namespace]
 
-    @load.register(Iterable)
-    @staticmethod
-    def _(
-        artifacts_or_predictors: Iterable[Callable | Generator],
+    def load(
+        self,
+        artifacts_or_predictors: Callable
+        | Generator
+        | dict[Callable, dict[str, Any] | None]
+        | Iterable[Callable | Generator],
     ):
-        """Load multiple artifacts or predictors without configs."""
-        return ModelManager.load(dict.fromkeys(artifacts_or_predictors, None))
-
-    @load.register(dict)
-    @staticmethod
-    def _(artifacts_or_predictors: dict[Callable, dict[str, Any] | None]):
-        """Load multiple artifacts or predictors with configs."""
-        current_namespace = CURRENT_NAMESPACE.get()
-        logger.debug(
-            "Loading model components",
-            artifacts=[
-                f
-                for f in artifacts_or_predictors
-                if MetaModelManager.functions[f.__name__]["kind"]
-                == ComponentType.ARTIFACT
-            ],
-            predictors=[
-                f.__name__
-                for f in artifacts_or_predictors
-                if MetaModelManager.functions[f.__name__]["kind"]
-                == ComponentType.PREDICTOR
-            ],
-            namespace=current_namespace,
-        )
-        for artifact_or_predictor, config in artifacts_or_predictors.items():
-            ModelManager._load_artifact_or_predictor(
-                MetaModelManager.namespaces[current_namespace],
-                artifact_or_predictor,
-                config,
+        if isinstance(artifacts_or_predictors, dict):
+            return _load_many_artifacts_or_predictors(
+                self._namespace, artifacts_or_predictors
             )
+        if isinstance(artifacts_or_predictors, Iterable):
+            return _load_many_artifacts_or_predictors(
+                self._namespace,
+                dict.fromkeys(artifacts_or_predictors, None),
+            )
+        if isinstance(artifacts_or_predictors, Callable | Generator):
+            return _load_one_artifact_or_predictor(
+                self._namespace, {artifacts_or_predictors: None}
+            )
+        raise TypeError(
+            f"Invalid type for artifacts_or_predictors: {type(artifacts_or_predictors)}"
+        )
 
     def _load(self):
-        def _fill_exit_stack():
-            cleanup_funcs = [
-                (meta, func_name)
-                for func_name, meta in MetaModelManager.functions.items()
-                if meta.get("clean_up")
-            ]
-            for func_name, meta in cleanup_funcs:
-                if meta.get("clean_up"):
-                    self._exit_stack.callback(
-                        lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
-                    )
-
-        for func_name, meta in MetaModelManager.functions.items():
-            if meta.get("clean_up"):
-                self._exit_stack.callback(
-                    lambda m=meta, fn=func_name: self._cleanup_artifact(m, fn)
-                )
+        self._exit_stack = _register_cleanup_functions(_functions)
         try:
             self.load(self.artifacts_or_predictors)
         except Exception as e:
             logger.error("Error during loading components", error=str(e))
-            _fill_exit_stack()
-            self._exit_stack.close()
+            self.close()
             raise
-        _fill_exit_stack()
-        return self
 
-    def _close(self):
+    def close(self):
         logger.debug("Closing model manager", namespace=self.namespace)
-        CURRENT_NAMESPACE.reset(self.namespace_token)
         try:
             self._exit_stack.close()
         except Exception as cleanup_error:
             logger.error("Error during cleanup", error=str(cleanup_error))
+            raise
+        finally:
+            _current_namespace.reset(self._namespace_token)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._close()
+        self.close()
         if exc_type:
             logger.error("Exiting due to exception", error=str(exc_val))
 
-    @staticmethod
-    def _cleanup_artifact(meta, func_name):
-        try:
-            logger.debug("Tearing down component", component=func_name)
-            if clean_up := meta.get("clean_up"):
-                next(clean_up)
-        except StopIteration:
-            pass
-        except Exception as e:
-            logger.error(
-                "Failed to clean up component",
-                name=func_name,
-                error=str(e),
-                error_type=e.__class__.__name__,
-            )
 
-    @staticmethod
-    def close(
-        namespace: dict[str, dict[frozenset, Any]] | None = None,
-    ):
-        namespace = namespace or MetaModelManager.namespaces[CURRENT_NAMESPACE.get()]
-        cleanup_items = [
-            func_name
-            for func_name, metadata in MetaModelManager.functions.items()
-            if metadata.get("clean_up")
-        ]
-        for func_name in cleanup_items:
-            try:
-                ModelManager._cleanup_artifact(
-                    MetaModelManager.functions[func_name], func_name
-                )
-            except StopIteration:
-                pass
-            except Exception as e:
-                logger.error(
-                    "Failed to clean up component",
-                    name=func_name,
-                    error=str(e),
-                    error_type=e.__class__.__name__,
-                )
-        for func_name, _ in cleanup_items:
-            MetaModelManager.functions.pop(func_name, None)
-        namespace.clear()
-
-    @staticmethod
-    def _load_artifact_or_predictor(
-        namespace: dict[str, dict[frozenset, Any]],
-        func: Callable | Generator,
-        config: dict[str, Any] | None = None,
-    ) -> Callable | Generator:
-        t0 = time.perf_counter()
-        kind = MetaModelManager.functions[func.__name__]["kind"]
-        prepared_args = {}
-        config = config or {}
-        config_cache_key = _create_cache_key(config)
-        if cached := _get_from_cache(namespace, func.__name__, config_cache_key):
+def _load_one_artifact_or_predictor(
+    namespace: dict[str, dict[frozenset, Any]],
+    func: Callable | Generator,
+    config: dict[str, Any] | None = None,
+) -> Callable | Generator:
+    t0 = time.perf_counter()
+    kind = _functions[func.__name__]["kind"]
+    prepared_args = {}
+    config = config or {}
+    config_cache_key = _create_cache_key(config)
+    if cached := _get_from_cache(namespace, func.__name__, config_cache_key):
+        logger.debug(
+            "Using cached component",
+            kind=kind.value,
+            name=func.__name__,
+            cache_key=str(config_cache_key),
+            elapsed=round(time.perf_counter() - t0, 9),
+        )
+        return cached
+    logger.debug(
+        "Loading component", name=func.__name__, kind=kind.value, config=config
+    )
+    # whether the function is an artifact or a predictor, it can have files dependencies
+    files = _functions[func.__name__]["files"]
+    for param_name, uri, files_params in files:
+        logger.debug(
+            "Processing files dependency",
+            component=func.__name__,
+            param_name=param_name,
+            dependency=uri,
+            params=files_params,
+        )
+        files_params["cache_strategy"] = (
+            FileDependencyCacheStrategy(files_params["cache_strategy"])
+            if files_params.get("cache_strategy")
+            else CONFIG.cache_strategy
+        )
+        files_params["storage_options"] = files_params.get("storage_options") or {}
+        files_params["open_options"] = files_params.get("open_options") or {}
+        files_params["force_download"] = (
+            files_params.get("force_download") or CONFIG.force_download
+        )
+        cache_key = _create_cache_key(files_params)
+        file_dependency = _get_from_cache(
+            namespace, "file/" + uri, cache_key
+        )  # file/ to avoid collision with function names
+        if file_dependency:
             logger.debug(
-                "Using cached component",
-                kind=kind.value,
-                name=func.__name__,
-                cache_key=str(config_cache_key),
+                "Using cached file",
+                name="file/" + uri,
+                cache_key=str(cache_key),
                 elapsed=round(time.perf_counter() - t0, 9),
             )
-            return cached
-        logger.debug(
-            "Loading component", name=func.__name__, kind=kind.value, config=config
-        )
-        # whether the function is an artifact or a predictor, it can have files dependencies
-        files = MetaModelManager.functions[func.__name__]["files"]
-        for param_name, uri, files_params in files:
-            logger.debug(
-                "Processing files dependency",
-                component=func.__name__,
-                param_name=param_name,
-                dependency=uri,
-                params=files_params,
-            )
-            files_params["cache_strategy"] = (
-                FileDependencyCacheStrategy(files_params["cache_strategy"])
-                if files_params.get("cache_strategy")
-                else CONFIG.cache_strategy
-            )
-            files_params["storage_options"] = files_params.get("storage_options") or {}
-            files_params["open_options"] = files_params.get("open_options") or {}
-            files_params["force_download"] = (
-                files_params.get("force_download") or CONFIG.force_download
-            )
-            cache_key = _create_cache_key(files_params)
-            file_dependency = _get_from_cache(
-                namespace, "file/" + uri, cache_key
-            )  # file/ to avoid collision with function names
-            if file_dependency:
-                logger.debug(
-                    "Using cached file",
-                    name="file/" + uri,
-                    cache_key=str(cache_key),
-                    elapsed=round(time.perf_counter() - t0, 9),
-                )
-            else:
-                file_dependency = load_file_dependency(uri, files_params)
-                _cache_value(namespace, "file/" + uri, cache_key, file_dependency)
-            prepared_args[param_name] = file_dependency
-        # For predictors, we don't cache the function itself, just its artifact dependencies
-        if kind == ComponentType.PREDICTOR:
-            dependencies = MetaModelManager.functions[func.__name__]["dependencies"]
-            logger.debug(
-                "Dependency resolution status",
-                predictor=func.__name__,
-                resolved_count=len(dependencies),
-                resolved_names=[name for name, _, _ in dependencies],
-            )
-            for param_name, dep_func, dep_func_args in dependencies:
-                if param_name in config:
-                    logger.debug(
-                        "Skipping dependency resolution",
-                        component=func.__name__,
-                        dependency=dep_func.__name__,
-                        cause="dependency passed in config",
-                    )
-                    continue
-                logger.debug(
-                    "Processing dependency",
-                    component=func.__name__,
-                    dependency=dep_func.__name__,
-                )
-                dep_result = ModelManager._load_artifact_or_predictor(
-                    namespace, dep_func, dep_func_args
-                )
-                prepared_args[param_name] = dep_result
-
-            logger.debug("Prepared predictor", name=func.__name__, args=prepared_args)
-            prepared_predictor = functools.partial(
-                func, **(prepared_args | (config or {}))
-            )
-            _cache_value(namespace, func.__name__, config_cache_key, prepared_predictor)
-            return prepared_predictor
-
-        if kind != ComponentType.ARTIFACT:
-            raise ValueError(f"Invalid kind {kind}")
-        dependencies = MetaModelManager.functions[func.__name__]["dependencies"]
+        else:
+            file_dependency = load_file_dependency(uri, files_params)
+            _cache_value(namespace, "file/" + uri, cache_key, file_dependency)
+        prepared_args[param_name] = file_dependency
+    # For predictors, we don't cache the function itself, just its artifact dependencies
+    if kind == ComponentType.PREDICTOR:
+        dependencies = _functions[func.__name__]["dependencies"]
         logger.debug(
             "Dependency resolution status",
             predictor=func.__name__,
@@ -325,47 +217,131 @@ class ModelManager:
                     cause="dependency passed in config",
                 )
                 continue
-
             logger.debug(
                 "Processing dependency",
                 component=func.__name__,
                 dependency=dep_func.__name__,
             )
-            dep_result = ModelManager._load_artifact_or_predictor(
+            dep_result = _load_one_artifact_or_predictor(
                 namespace, dep_func, dep_func_args
             )
             prepared_args[param_name] = dep_result
 
-        final_args = prepared_args | (config or {})
-        logger.debug("Computing artifact", name=func.__name__, args=final_args)
-        try:
-            result = (
-                func.__wrapped__(**final_args)
-                if hasattr(func, "__wrapped_component__")
-                else func(**final_args)
-            )
-            if isinstance(result, Generator):
-                MetaModelManager.functions[func.__name__]["clean_up"] = result
-                result = next(result)
-            _cache_value(namespace, func.__name__, config_cache_key, result)
-            logger.debug(
-                "Component loaded",
-                name=func.__name__,
-                kind=kind.value,
-                elapsed=round(time.perf_counter() - t0, 9),
-                size_mb=round(pympler.asizeof.asizeof(result) / (1024 * 1024), 9)
-                if has_pympler
-                else None,
-            )
-            return result
+        logger.debug("Prepared predictor", name=func.__name__, args=prepared_args)
+        prepared_predictor = functools.partial(func, **(prepared_args | (config or {})))
+        _cache_value(namespace, func.__name__, config_cache_key, prepared_predictor)
+        return prepared_predictor
 
-        except Exception as e:
-            logger.error(
-                "Failed to load component",
-                name=func.__name__,
-                kind=kind.value,
-                error=str(e),
-                error_type=e.__class__.__name__,
-                config=config,
+    if kind != ComponentType.ARTIFACT:
+        raise ValueError(f"Invalid kind {kind}")
+    dependencies = _functions[func.__name__]["dependencies"]
+    logger.debug(
+        "Dependency resolution status",
+        predictor=func.__name__,
+        resolved_count=len(dependencies),
+        resolved_names=[name for name, _, _ in dependencies],
+    )
+    for param_name, dep_func, dep_func_args in dependencies:
+        if param_name in config:
+            logger.debug(
+                "Skipping dependency resolution",
+                component=func.__name__,
+                dependency=dep_func.__name__,
+                cause="dependency passed in config",
             )
-            raise ComponentLoadError("Failed to load component") from e
+            continue
+
+        logger.debug(
+            "Processing dependency",
+            component=func.__name__,
+            dependency=dep_func.__name__,
+        )
+        dep_result = _load_one_artifact_or_predictor(namespace, dep_func, dep_func_args)
+        prepared_args[param_name] = dep_result
+
+    final_args = prepared_args | (config or {})
+    logger.debug("Computing artifact", name=func.__name__, args=final_args)
+    try:
+        result = (
+            func.__wrapped__(**final_args)
+            if hasattr(func, "__wrapped_component__")
+            else func(**final_args)
+        )
+        if isinstance(result, Generator):
+            _functions[func.__name__]["clean_up"] = result
+            result = next(result)
+        _cache_value(namespace, func.__name__, config_cache_key, result)
+        logger.debug(
+            "Component loaded",
+            name=func.__name__,
+            kind=kind.value,
+            elapsed=round(time.perf_counter() - t0, 9),
+            size_mb=round(pympler.asizeof.asizeof(result) / (1024 * 1024), 9)
+            if has_pympler
+            else None,
+        )
+        return result
+
+    except Exception as e:
+        logger.error(
+            "Failed to load component",
+            name=func.__name__,
+            kind=kind.value,
+            error=str(e),
+            error_type=e.__class__.__name__,
+            config=config,
+        )
+        raise ComponentLoadError("Failed to load component") from e
+
+
+def _load_many_artifacts_or_predictors(
+    namespace: dict[str, dict[frozenset, Any]],
+    artifacts_or_predictors: dict[Callable, dict[str, Any] | None],
+) -> None:
+    logger.debug(
+        "Loading model components",
+        artifacts=[
+            f
+            for f in artifacts_or_predictors
+            if _functions[f.__name__]["kind"] == ComponentType.ARTIFACT
+        ],
+        predictors=[
+            f.__name__
+            for f in artifacts_or_predictors
+            if _functions[f.__name__]["kind"] == ComponentType.PREDICTOR
+        ],
+        namespace=namespace,
+    )
+    for artifact_or_predictor, config in artifacts_or_predictors.items():
+        _load_one_artifact_or_predictor(
+            namespace,
+            artifact_or_predictor,
+            config,
+        )
+
+
+def _cleanup_artifact(meta: Metadata) -> None:
+    try:
+        logger.debug("Tearing down component", component=meta.function.__name__)
+        if clean_up := meta.get("clean_up"):
+            next(clean_up)
+    except StopIteration:
+        pass
+    except Exception as e:
+        logger.error(
+            "Failed to clean up component",
+            name=meta.function.__name__,
+            error=str(e),
+            error_type=e.__class__.__name__,
+        )
+        raise
+
+
+def _register_cleanup_functions(
+    functions: dict[str, Metadata],
+) -> contextlib.ExitStack:
+    exit_stack = contextlib.ExitStack()
+    for meta in functions.values():
+        if meta.get("clean_up"):
+            exit_stack.callback(lambda m=meta: _cleanup_artifact(m))
+    return exit_stack
