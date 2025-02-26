@@ -33,6 +33,7 @@ jobs:
             TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
           run: |
             twine check dist/*
+            twine upload dist/*
         - name: Create Release
           uses: actions/create-release@v1
           env:
