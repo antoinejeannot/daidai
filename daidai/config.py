@@ -37,6 +37,13 @@ class DaiDaiConfig:
             Path(tempfile.mkdtemp(prefix="daidai-")),
             build=cache_strategy == CacheStrategy.ON_DISK_TEMP,
         )
+        if not cache_dir_tmp.is_dir():
+            logger.error(f"Temporary cache is not a directory: {cache_dir_tmp}")
+            raise ValueError(f"Temporary cache is not a directory: {cache_dir_tmp}")
+        if any(cache_dir_tmp.iterdir()):
+            logger.error(f"Temporary cache must be empty: {cache_dir_tmp}")
+            raise ValueError(f"Temporary cache must be empty: {cache_dir_tmp}")
+
         force_download = cls._validate_force_download_from_env(
             "DAIDAI_FORCE_DOWNLOAD", False
         )
