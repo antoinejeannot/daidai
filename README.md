@@ -24,19 +24,19 @@ Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
 
 - 🚀 **Accelerates Development** - Reduces iteration cycles with zero-config caching
 - 🧩 **Simplifies Architecture** - Define reusable components with clear dependencies
-- 🔌 **Works Anywhere** - Seamless integration with cloud/local storage via fsspec
+- 🔌 **Works Anywhere** - Seamless integration with cloud/local storage via fsspec (local, s3, gcs, az, ftp, hf..)
 - 🧠 **Stays Out of Your Way** - Type-hint based DI means minimal boilerplate
 - 🧹 **Manages Resources** - Automatic cleanup prevents leaks and wasted compute
-- 🛡️ **Prioritizes Safety** - Strong typing catches issues at compile time, not runtime
-- 🧪 **Enables Testing** - Inject mock dependencies with ease for robust unit testing
-- 🎯 **Principle of Least Surprise** - Intuitive API that behaves exactly as you think it should work
+- 🧪 **Enables Testing** - Inject mock dependencies / stubs with ease for robust unit testing
+- 🪶 **Zero-dependency Core** - Needs no dependencies to run, install optionals at wills (files, extra..)
+- λ **Functional First** - Embraces pure functions, immutability, and composition for predictable workflows
 
 > **daidai** is named after the Japanese word for "orange" 🍊, a fruit that is both sweet and sour, just like the experience of managing dependencies in ML projects. <br/>It is being developed with user happiness in mind, while providing great flexibility and minimal boilerplate. It has been inspired by [pytest](https://github.com/pytest-dev/pytest), [modelkit](https://github.com/Cornerstone-OnDemand/modelkit), [dependency injection & testing](https://antoinejeannot.github.io/nuggets/dependency_injection_and_testing.html) principles and functional programming.
 
 ## Installation
 
 ```bash
-pip install daidai
+pip install daidai[all]
 ```
 
 ## Quick Start
@@ -120,12 +120,12 @@ print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 
 ## Roadmap
 
-- [ ] Add tests (unit, integration, e2e)
-- [ ] Clean things up now that the UX has landed
-- [ ] Add docs
+- [x] Clean things up now that the UX has landed
 - [x] Protect file operations for parallelism / concurrency
-- [ ] Add support for async components
+- [ ] Add docs
+- [ ] Add tests (unit, integration, e2e)
 - [ ] Add a cookbook with common patterns & recipes
+- [ ] Add support for async components
 - [ ] Enjoy the fruits of my labor 🍊
 
 ## 🧵 Concurrency & Parallelism

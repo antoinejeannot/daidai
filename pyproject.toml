@@ -11,9 +11,7 @@ requires-python = ">=3.10"
 authors = [
     {name = "Antoine Jeannot", email = "antoine.jeannot1002+github@gmail.com"},
 ]
-dependencies = [
-    "fsspec>=2025.2.0",
-]
+dependencies = []
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -30,18 +28,23 @@ classifiers = [
 
 
 [project.optional-dependencies]
+files = [
+    "fsspec>=2025.2.0",
+]
 extra = [
     "pympler>=1.1",
+]
+all = ["daidai[files, extra]"]
+publish = [
+    "build>=1.2.2.post1",
+    "twine>=6.1.0",
 ]
 dev = [
     "pre-commit>=4.0.1",
     "ruff==0.9.7",
     "pytest>=8.3.4",
     "bandit[toml]>=1.8.3",
-]
-publish = [
-    "build>=1.2.2.post1",
-    "twine>=6.1.0",
+    "daidai[files,extra]",
 ]
 
 [tool.hatch.version]

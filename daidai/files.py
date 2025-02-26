@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, TextIO
 from weakref import WeakValueDictionary
 
-import fsspec.utils
-
 from daidai.config import CONFIG
 from daidai.logs import get_logger
 from daidai.types import (
@@ -19,12 +17,19 @@ from daidai.types import (
 
 logger = get_logger(__name__)
 
+try:
+    import fsspec.utils
+
+    has_fsspec = True
+except ImportError:
+    has_fsspec = False
+    logger.info("pympler is not installed, file dependencies will not work")
 
 _file_locks = WeakValueDictionary()
 _file_locks_lock = threading.RLock()  # Lock for the locks themselves
 
 
-def get_file_lock(file_path: str) -> threading.RLock:
+def _get_file_lock(file_path: str) -> threading.RLock:
     with _file_locks_lock:
         return _file_locks.setdefault(file_path, threading.RLock())
 
@@ -93,12 +98,16 @@ def _compute_target_path(
 def load_file_dependency(
     uri: str, files_params: FileDependencyParams
 ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
+    if not has_fsspec:
+        raise ImportError(
+            "fsspec is not installed. To use file dependencies, install the files extra: `pip install daidai[files]`"
+        )
     options = fsspec.utils.infer_storage_options(uri)
     protocol = options.get("protocol", "file")
     raw_path = options.get("path") or uri  # Fall back to the full URI if needed
 
     lock_key = f"{protocol}://{raw_path}"
-    file_lock = get_file_lock(lock_key)
+    file_lock = _get_file_lock(lock_key)
     with file_lock:
         return _load_file_dependency_impl(uri, files_params, protocol, raw_path)
 
@@ -129,12 +138,12 @@ def _load_file_dependency_impl(
         return _handle_no_cache(protocol, raw_path, open_options, deserialization)
 
     logger.error(
-        "Feature not yet implemented",
+        "Unsupported cache strategy",
         uri=uri,
         cache_strategy=files_params["cache_strategy"],
         files_params=files_params,
     )
-    raise NotImplementedError("Feature not yet implemented")
+    raise ValueError(f"Unsupported cache strategy: {files_params['cache_strategy']}")
 
 
 def _handle_disk_cache(

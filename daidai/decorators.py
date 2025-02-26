@@ -23,7 +23,6 @@ R = typing.TypeVar("R")
 
 def component_decorator(kind: ComponentType):
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        # Register the function and its metadata.
         _functions[func.__name__] = Metadata(
             dependencies=[],
             kind=kind,
@@ -34,7 +33,6 @@ def component_decorator(kind: ComponentType):
         hints = typing.get_type_hints(func, include_extras=True)
         sig = inspect.signature(func)
 
-        # Process parameters to set up dependency resolution.
         for param_name in sig.parameters:
             if param_name not in hints:
                 continue
