@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "daidai"
 dynamic = ["version"]
-description = " Modern dependency & assets management library for MLOps"
+description = "Modern dependency injection and asset management for MLOps workflows with intelligent caching and minimal boilerplate"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
@@ -20,11 +20,31 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
+    "Natural Language :: English",
 ]
+keywords = [
+    "mlops",
+    "dependency-injection",
+    "caching",
+    "machine-learning",
+    "asset-management",
+    "functional-programming",
+    "resource-management"
+]
+license = {text = "MIT"}
 
 [project.urls]
 "Homepage" = "https://github.com/antoinejeannot/daidai"
 "Bug Tracker" = "https://github.com/antoinejeannot/daidai/issues"
+"Documentation" = "https://antoinejeannot.github.io/daidai/"
+"Source" = "https://github.com/antoinejeannot/daidai"
 
 
 [project.optional-dependencies]
@@ -35,6 +55,7 @@ memory = [
     "pympler>=1.1",
 ]
 all = ["daidai[files, memory]"]
+
 publish = [
     "build>=1.2.2.post1",
     "twine>=6.1.0",
@@ -60,7 +81,6 @@ packages = ["daidai"]
 [tool.hatch.build.targets.sdist]
 include = [
     "daidai",
-    "tests",
     "README.md",
     "LICENSE",
 ]
