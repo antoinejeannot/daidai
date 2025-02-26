@@ -1,17 +1,19 @@
 site_name: daidai 🍊
-site_url: https://antoinejeannot.github.io/daidai/
-site_description: "Modern dependency & assets management library for MLOps "
+site_description: "Modern dependency injection and asset management for MLOps workflows"
 site_author: Antoine Jeannot
+repo_name: daidai
+repo_url: https://github.com/antoinejeannot/daidai
+site_url: https://antoinejeannot.github.io/daidai/
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2025 Antoine Jeannot
+
 theme:
   name: material
+  # logo: https://raw.githubusercontent.com/antoinejeannot/daidai/assets/logo.svg
+  favicon: https://raw.githubusercontent.com/antoinejeannot/daidai/assets/favicon/favicon.ico
+  icon:
+    repo: fontawesome/brands/github
   palette:
-    - media: "(prefers-color-scheme)"
-      toggle:
-        icon: material/brightness-auto
-        name: Switch to light mode
-      primary: black
-      accent: amber
-
     - media: "(prefers-color-scheme: light)"
       scheme: default
       toggle:
@@ -31,9 +33,24 @@ theme:
     - navigation.indexes
     - navigation.expand
     - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - navigation.path
+    - search.suggest
+    - search.highlight
     - content.code.copy
     - content.code.select
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
 markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
   - toc:
       permalink: true
       toc_depth: 2
@@ -45,6 +62,70 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.superfences:
       custom_fences:
-      - name: mermaid
-        class: mermaid
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - privacy
+  - social:
+      cards_dir: assets/social
+      cards_layout_options:
+        font_family: Roboto
+        background_color: "#ff8c00"
+        color: "#ffffff"
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: datetime
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
+
+extra:
+  analytics:
+    provider: google
+    property: !ENV GOOGLE_ANALYTICS_KEY
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/antoinejeannot/daidai/
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/daidai/
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/antoinejeann0t
+
+nav:
+  - Introduction:
+    - Introduction to daidai: 'index.md'
+    - Why use daidai ?: 'why.md'
+    - Need help ?: 'help.md'
+    - Installation: 'installation.md'
+    - Philosophy: 'concepts/philosophy.md'
+    - API Reference: 'api.md'
+  - Cookbooks:
+    - "Cookbooks": 'cookbooks/index.md'
+  - Concepts:
+    - Overview: 'concepts/index.md'
+  - Integrations:
+    - Integrations with daidai: 'integrations/index.md'
+    - FastAPI: 'integrations/fastapi.md'
+    - Flask: 'integrations/flask.md'
+    - Jupyter: 'integrations/jupyter.md'
+    - MLFlow: 'integrations/mlflow.md'
+    - AWS S3: 'integrations/s3.md'
+    - Google Cloud Storage: 'integrations/gcs.md'
+    - Microsoft Azure Blob Storage: 'integrations/azure.md'
+    - HuggingFace: 'integrations/hf.md'
+  - CLI Reference:
+      - "CLI Reference": "cli/index.md"
+  - Tutorials:
+    - Overview: 'tutorials/index.md'
