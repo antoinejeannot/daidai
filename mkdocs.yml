@@ -5,11 +5,13 @@ repo_name: daidai
 repo_url: https://github.com/antoinejeannot/daidai
 site_url: https://antoinejeannot.github.io/daidai/
 edit_uri: edit/main/docs/
-copyright: Copyright &copy; 2025 Antoine Jeannot
+copyright: >
+  Copyright &copy; 2025 Antoine Jeannot <br/>
+  <a href="#__consent">Change cookie settings</a>
 
 theme:
   name: material
-  # logo: https://raw.githubusercontent.com/antoinejeannot/daidai/assets/logo.svg
+  logo: https://raw.githubusercontent.com/antoinejeannot/daidai/assets/logo.svg
   favicon: https://raw.githubusercontent.com/antoinejeannot/daidai/assets/favicon/favicon.ico
   icon:
     repo: fontawesome/brands/github
@@ -102,7 +104,16 @@ extra:
       link: https://pypi.org/project/daidai/
     - icon: fontawesome/brands/twitter
       link: https://twitter.com/antoinejeann0t
-
+  consent:
+    title: 🍊 Cookie consent
+    actions:
+      - manage
+      - accept
+      - reject
+    description: >-
+      We use cookies to measure the effectiveness of our documentation and whether users
+      find what they are searching for.<br/>
+      With your consent, you're helping us to make our documentation better and daidai greater 🙏
 nav:
   - Introduction:
     - Introduction to daidai: 'index.md'
