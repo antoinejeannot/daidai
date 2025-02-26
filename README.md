@@ -28,7 +28,7 @@ Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
 - 🧠 **Stays Out of Your Way** - Type-hint based DI means minimal boilerplate
 - 🧹 **Manages Resources** - Automatic cleanup prevents leaks and wasted compute
 - 🧪 **Enables Testing** - Inject mock dependencies / stubs with ease for robust unit testing
-- 🪶 **Requires Zero Dependencies** - Needs no dependencies to run (_Zero-dependency Core_), install optionals at will
+- 🪶 **Requires Zero Dependencies** - _Zero-dependency Core_ philosophy, install optionals at will
 - λ **Promotes Functional Thinking** - Embraces pure functions, immutability, and composition for predictable workflows
 - 🧰 **Adapts to Your Design** - pure functions enable seamless integration with your preferred caching, versioning, validation systems..
 
@@ -220,6 +220,55 @@ When you call a predictor or artifact, `daidai` automatically:
 4. Injects them into your function
 
 This happens transparently, so you can focus on your business logic rather than dependency management.
+
+<details open>
+<summary>Simple Dependency Resolution Flowchart</summary>
+
+For a single predictor with one artifact dependency having one file dependency, the dependency resolution flow looks like this:
+
+
+```mermaid
+flowchart TD
+    A[User calls Predictor] --> B{Predictor in cache?}
+
+    subgraph "Dependency Resolution"
+        B -->|No| D[Resolve Dependencies]
+
+        subgraph "Artifact Resolution"
+            D --> E{Artifact in cache?}
+            E -->|No| G[Resolve Artifact Dependencies]
+
+            subgraph "File Handling"
+                G --> H{File in cache?}
+                H -->|No| J[Download File]
+                J --> K[Cache File based on Strategy]
+                K --> I[Get Cached File]
+                H -->|Yes| I
+            end
+
+            I --> L[Deserialize File to Required Format]
+            L --> M[Compute Artifact with File]
+            M --> N[Cache Artifact]
+            N --> F[Get Cached Artifact]
+            E -->|Yes| F
+        end
+
+        F --> O[Create Predictor Partial Function]
+        O --> P[Cache Prepared Predictor]
+    end
+
+    B -->|Yes| C[Get Cached Predictor]
+    P --> C
+
+    subgraph "Execution"
+        C --> Q[Execute Predictor Function]
+    end
+
+    Q --> R[Return Result to User]
+
+```
+
+</details>
 
 ### Manual Overrides
 
@@ -651,4 +700,4 @@ def test_with_test_embeddings():
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/antoinejeannot/daidai/blob/main/LICENSE) file for details.

@@ -30,7 +30,21 @@ theme:
   features:
     - navigation.indexes
     - navigation.expand
+    - navigation.tabs
+    - content.code.copy
+    - content.code.select
 markdown_extensions:
   - toc:
       permalink: true
       toc_depth: 2
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+      - name: mermaid
+        class: mermaid
+  - pymdownx.details
