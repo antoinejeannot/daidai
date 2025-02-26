@@ -27,3 +27,10 @@ theme:
         name: Switch to system preference
       primary: black
       accent: amber
+  features:
+    - navigation.indexes
+    - navigation.expand
+markdown_extensions:
+  - toc:
+      permalink: true
+      toc_depth: 2

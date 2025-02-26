@@ -31,10 +31,10 @@ classifiers = [
 files = [
     "fsspec>=2025.2.0",
 ]
-extra = [
+memory = [
     "pympler>=1.1",
 ]
-all = ["daidai[files, extra]"]
+all = ["daidai[files, memory]"]
 publish = [
     "build>=1.2.2.post1",
     "twine>=6.1.0",
@@ -44,7 +44,8 @@ dev = [
     "ruff==0.9.7",
     "pytest>=8.3.4",
     "bandit[toml]>=1.8.3",
-    "daidai[files,extra]",
+    "daidai[files, memory]",
+    "mkdocs-material>=9.6.5",
 ]
 
 [tool.hatch.version]
