@@ -22,8 +22,10 @@ except ImportError:
     logger.info("pympler is not installed, memory usage will not be logged")
 
 _current_namespace = contextvars.ContextVar("CURRENT_NAMESPACE", default="global")
-_namespaces = collections.defaultdict(lambda: collections.defaultdict(dict))
-_functions: dict[str, Metadata] = {}
+_namespaces = collections.defaultdict(
+    lambda: collections.defaultdict(dict)
+)  # id -> func_name -> cache_key -> value
+_functions: dict[str, Metadata] = {}  # func_name -> metadata
 
 
 def _create_cache_key(args: dict[str, Any] | None) -> frozenset:
@@ -69,7 +71,9 @@ class ModelManager:
         | None = None,
         namespace: str | None = None,
     ):
-        self.namespace = namespace or _current_namespace.get()
+        if namespace == "global":
+            raise ValueError("Cannot use 'global' as a namespace")
+        self.namespace = namespace or str(id(self))
         self._namespace_token = _current_namespace.set(self.namespace)
         self._exit_stack = contextlib.ExitStack()
         if isinstance(preload, dict):
@@ -87,7 +91,7 @@ class ModelManager:
             self._load()
 
     @property
-    def _namespace(self):
+    def _namespace(self) -> dict[str, dict[frozenset, Any]]:
         return _namespaces[self.namespace]
 
     def load(
@@ -115,11 +119,13 @@ class ModelManager:
         )
 
     def _load(self):
-        self._exit_stack = _register_cleanup_functions(_functions)
         try:
             self.load(self.artifacts_or_predictors)
+            self._exit_stack = _register_cleanup_functions(self._namespace)
         except Exception as e:
             logger.error("Error during loading components", error=str(e))
+            # If an error occurs during loading, we still need to clean up the loaded components
+            self._exit_stack = _register_cleanup_functions(self._namespace)
             self.close()
             raise
 
@@ -131,7 +137,9 @@ class ModelManager:
             logger.error("Error during cleanup", error=str(cleanup_error))
             raise
         finally:
+            _namespaces.pop(self.namespace)
             _current_namespace.reset(self._namespace_token)
+            logger.debug("Model manager closed", namespace=self.namespace)
 
     def __enter__(self):
         return self
@@ -268,7 +276,7 @@ def _load_one_artifact_or_predictor(
             else func(**final_args)
         )
         if isinstance(result, Generator):
-            _functions[func.__name__]["clean_up"] = result
+            namespace.setdefault("__cleanup__", {})[func.__name__] = result
             result = next(result)
         _cache_value(namespace, func.__name__, config_cache_key, result)
         logger.debug(
@@ -320,17 +328,16 @@ def _load_many_artifacts_or_predictors(
         )
 
 
-def _cleanup_artifact(meta: Metadata) -> None:
+def _cleanup_artifact_namespace(name, generator):
     try:
-        logger.debug("Tearing down component", component=meta.function.__name__)
-        if clean_up := meta.get("clean_up"):
-            next(clean_up)
+        logger.debug("Cleaning up artifact", name=name)
+        next(generator)
     except StopIteration:
         pass
     except Exception as e:
         logger.error(
             "Failed to clean up component",
-            name=meta.function.__name__,
+            name=name,
             error=str(e),
             error_type=e.__class__.__name__,
         )
@@ -338,10 +345,11 @@ def _cleanup_artifact(meta: Metadata) -> None:
 
 
 def _register_cleanup_functions(
-    functions: dict[str, Metadata],
+    namespace: dict[str, dict[frozenset, Any]],
 ) -> contextlib.ExitStack:
     exit_stack = contextlib.ExitStack()
-    for meta in functions.values():
-        if meta.get("clean_up"):
-            exit_stack.callback(lambda m=meta: _cleanup_artifact(m))
+    for func_name, generator in namespace.get("__cleanup__", {}).items():
+        exit_stack.callback(
+            lambda name=func_name, gen=generator: _cleanup_artifact_namespace(name, gen)
+        )
     return exit_stack

@@ -22,9 +22,6 @@ class Metadata(typing.TypedDict):
     files: list[tuple[str, str, dict[str, typing.Any]]]
     # (param_name, files_uri, files_args)
     function: typing.Callable
-    clean_up: (
-        typing.Generator | None
-    )  # Only for artifacts using generators for init & cleanup
 
 
 class FileDependencyCacheStrategy(enum.Enum):

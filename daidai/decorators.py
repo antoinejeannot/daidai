@@ -28,7 +28,6 @@ def component_decorator(kind: ComponentType):
             kind=kind,
             function=func,
             files=[],
-            clean_up=None,
         )
         hints = typing.get_type_hints(func, include_extras=True)
         sig = inspect.signature(func)
