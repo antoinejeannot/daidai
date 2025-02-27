@@ -18,6 +18,15 @@
 
 🚧 **daidai** is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, but feel free to give it a try :) 🚧
 
+<details open>
+<summary>🎧 Stop reading, listen to daidai 🍊's podcast instead 🎙️</summary>
+
+
+[What is Daidai 🍊.webm](https://github.com/user-attachments/assets/d86dd502-ca02-46df-874b-09bbe4f5fc6b)
+
+_Powered by [NotebookLM](https://notebooklm.google.com/notebook/e273780a-e0db-457f-bb5b-cca0778abe9d/audio)_
+</details>
+
 ## Why daidai?
 
 Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
@@ -34,6 +43,7 @@ Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
 
 
 > **daidai** is named after the Japanese word for "orange" 🍊, a fruit that is both sweet and sour, just like the experience of managing dependencies in ML projects. <br/>It is being developed with user happiness in mind, while providing great flexibility and minimal boilerplate. It has been inspired by [pytest](https://github.com/pytest-dev/pytest), [modelkit](https://github.com/Cornerstone-OnDemand/modelkit), [dependency injection & testing](https://antoinejeannot.github.io/nuggets/dependency_injection_and_testing.html) principles and functional programming.
+
 
 ## Installation
 
