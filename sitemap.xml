@@ -2,58 +2,58 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://antoinejeannot.github.io/daidai/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/cli/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/concepts/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/cookbooks/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/azure/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/fastapi/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/flask/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/gcs/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/hf/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/jupyter/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/mlflow/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/integrations/s3/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
     <url>
          <loc>https://antoinejeannot.github.io/daidai/tutorials/</loc>
-         <lastmod>2025-02-26</lastmod>
+         <lastmod>2025-02-27</lastmod>
     </url>
 </urlset>
