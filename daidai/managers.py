@@ -6,10 +6,13 @@ import time
 from collections.abc import Callable, Generator, Iterable
 from typing import Any
 
-from daidai.config import CONFIG
-from daidai.files import FileDependencyCacheStrategy, load_file_dependency
+from daidai.files import load_file_dependency
 from daidai.logs import get_logger
-from daidai.types import ComponentLoadError, ComponentType, Metadata
+from daidai.types import (
+    ComponentLoadError,
+    ComponentType,
+    Metadata,
+)
 
 logger = get_logger(__name__)
 
@@ -182,16 +185,14 @@ def _load_one_artifact_or_predictor(
             dependency=uri,
             params=files_params,
         )
-        files_params["cache_strategy"] = (
-            FileDependencyCacheStrategy(files_params["cache_strategy"])
-            if files_params.get("cache_strategy")
-            else CONFIG.cache_strategy
-        )
-        files_params["storage_options"] = files_params.get("storage_options") or {}
-        files_params["open_options"] = files_params.get("open_options") or {}
-        files_params["force_download"] = (
-            files_params.get("force_download") or CONFIG.force_download
-        )
+        if param_name in config:
+            logger.debug(
+                "Skipping files dependency resolution",
+                component=func.__name__,
+                dependency=uri,
+                cause="dependency passed in config",
+            )
+            continue
         cache_key = _create_cache_key(files_params)
         file_dependency = _get_from_cache(
             namespace, "file/" + uri, cache_key
@@ -353,3 +354,49 @@ def _register_cleanup_functions(
             lambda name=func_name, gen=generator: _cleanup_artifact_namespace(name, gen)
         )
     return exit_stack
+
+
+def extract_dependencies_to_load(
+    artifacts_or_predictors: dict[Callable, dict[str, Any] | None],
+) -> dict[str, list[tuple[str, dict[str, Any]]]]:
+    """
+    Extract all file dependencies from components in a flat structure for parallel resolution.
+    """
+    visited = set()
+    flattened_predictors = []
+    flattened_artifacts = []
+    flattened_file_deps = []
+    queue = collections.deque(artifacts_or_predictors.items())
+    while queue:
+        func, config = queue.popleft()
+        config = config or {}
+        cache_key = _create_cache_key(config | {"__func_name__": func.__name__})
+        if cache_key in visited:
+            continue
+        visited.add(cache_key)
+        dependencies = _functions[func.__name__]["dependencies"]
+        for param_name, dep_func, dep_func_args in dependencies:
+            if param_name in config:
+                # If the dependency is passed in the config, we don't need to resolve it
+                continue
+            queue.append((dep_func, dep_func_args))
+        if _functions[func.__name__]["kind"] == ComponentType.ARTIFACT:
+            flattened_artifacts.append((func.__name__, config))
+        else:
+            flattened_predictors.append((func.__name__, config))
+        files_dependencies = _functions[func.__name__]["files"]
+        for param_name, uri, files_params in files_dependencies:
+            if param_name in config:
+                # If the dependency is passed in the config, we don't need to resolve
+                continue
+            cache_key = _create_cache_key(files_params | {"__file_uri__": uri})
+            if cache_key in visited:
+                continue
+            visited.add(cache_key)
+            flattened_file_deps.append((uri, files_params))
+
+    return {
+        "predictors": flattened_predictors,
+        "artifacts": flattened_artifacts,
+        "files": flattened_file_deps,
+    }
