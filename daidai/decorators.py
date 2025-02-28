@@ -5,6 +5,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Annotated, Any, BinaryIO, TextIO
 
+from daidai.config import CONFIG
 from daidai.logs import get_logger
 from daidai.managers import (
     Metadata,
@@ -13,7 +14,7 @@ from daidai.managers import (
     _load_one_artifact_or_predictor,
     _namespaces,
 )
-from daidai.types import VALID_TYPES, ComponentType
+from daidai.types import VALID_TYPES, ComponentType, FileDependencyCacheStrategy
 
 logger = get_logger(__name__)
 
@@ -74,6 +75,18 @@ def component_decorator(kind: ComponentType):
                         raise ValueError(
                             "Cannot read text in binary mode. Use 'r' instead."
                         )
+                files_params["cache_strategy"] = (
+                    FileDependencyCacheStrategy(files_params["cache_strategy"])
+                    if files_params.get("cache_strategy")
+                    else CONFIG.cache_strategy
+                )
+                files_params["storage_options"] = (
+                    files_params.get("storage_options") or {}
+                )
+                files_params["open_options"] = files_params.get("open_options") or {}
+                files_params["force_download"] = (
+                    files_params.get("force_download") or CONFIG.force_download
+                )
                 _functions[func.__name__]["files"].append(
                     (param_name, files_uri, files_params)
                 )
