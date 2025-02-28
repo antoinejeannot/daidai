@@ -48,6 +48,10 @@ license = {text = "MIT"}
 
 
 [project.optional-dependencies]
+cli = [
+    "click>=8.0.1",
+    "rich>=13.9.4",
+]
 files = [
     "fsspec>=2025.2.0",
 ]
@@ -69,8 +73,11 @@ dev = [
     "ruff==0.9.7",
     "pytest>=8.3.4",
     "bandit[toml]>=1.8.3",
-    "daidai[files, memory]",
+    "daidai[files, memory, cli]",
 ]
+
+[project.scripts]
+daidai = "daidai.cli:cli"
 
 [tool.hatch.version]
 source = "vcs"
