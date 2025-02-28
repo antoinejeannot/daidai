@@ -159,21 +159,24 @@ def _load_one_artifact_or_predictor(
     config: dict[str, Any] | None = None,
 ) -> Callable | Generator:
     t0 = time.perf_counter()
-    kind = _functions[func.__name__]["kind"]
+    component_type = _functions[func.__name__]["type"]
     prepared_args = {}
     config = config or {}
     config_cache_key = _create_cache_key(config)
     if cached := _get_from_cache(namespace, func.__name__, config_cache_key):
         logger.debug(
             "Using cached component",
-            kind=kind.value,
+            type=component_type.value,
             name=func.__name__,
             cache_key=str(config_cache_key),
             elapsed=round(time.perf_counter() - t0, 9),
         )
         return cached
     logger.debug(
-        "Loading component", name=func.__name__, kind=kind.value, config=config
+        "Loading component",
+        name=func.__name__,
+        type=component_type.value,
+        config=config,
     )
     # whether the function is an artifact or a predictor, it can have files dependencies
     files = _functions[func.__name__]["files"]
@@ -209,7 +212,7 @@ def _load_one_artifact_or_predictor(
             _cache_value(namespace, "file/" + uri, cache_key, file_dependency)
         prepared_args[param_name] = file_dependency
     # For predictors, we don't cache the function itself, just its artifact dependencies
-    if kind == ComponentType.PREDICTOR:
+    if component_type == ComponentType.PREDICTOR:
         dependencies = _functions[func.__name__]["dependencies"]
         logger.debug(
             "Dependency resolution status",
@@ -241,8 +244,9 @@ def _load_one_artifact_or_predictor(
         _cache_value(namespace, func.__name__, config_cache_key, prepared_predictor)
         return prepared_predictor
 
-    if kind != ComponentType.ARTIFACT:
-        raise ValueError(f"Invalid kind {kind}")
+    if component_type != ComponentType.ARTIFACT:
+        logger.error("Invalid component type", component_type=component_type)
+        raise ValueError(f"Invalid component type: {component_type}")
     dependencies = _functions[func.__name__]["dependencies"]
     logger.debug(
         "Dependency resolution status",
@@ -283,7 +287,7 @@ def _load_one_artifact_or_predictor(
         logger.debug(
             "Component loaded",
             name=func.__name__,
-            kind=kind.value,
+            type=component_type.value,
             elapsed=round(time.perf_counter() - t0, 9),
             size_mb=round(pympler.asizeof.asizeof(result) / (1024 * 1024), 9)
             if has_pympler
@@ -295,7 +299,7 @@ def _load_one_artifact_or_predictor(
         logger.error(
             "Failed to load component",
             name=func.__name__,
-            kind=kind.value,
+            type=component_type.value,
             error=str(e),
             error_type=e.__class__.__name__,
             config=config,
@@ -312,12 +316,12 @@ def _load_many_artifacts_or_predictors(
         artifacts=[
             f
             for f in artifacts_or_predictors
-            if _functions[f.__name__]["kind"] == ComponentType.ARTIFACT
+            if _functions[f.__name__]["type"] == ComponentType.ARTIFACT
         ],
         predictors=[
             f.__name__
             for f in artifacts_or_predictors
-            if _functions[f.__name__]["kind"] == ComponentType.PREDICTOR
+            if _functions[f.__name__]["type"] == ComponentType.PREDICTOR
         ],
         namespace=namespace,
     )
@@ -380,7 +384,7 @@ def extract_dependencies_to_load(
                 # If the dependency is passed in the config, we don't need to resolve it
                 continue
             queue.append((dep_func, dep_func_args))
-        if _functions[func.__name__]["kind"] == ComponentType.ARTIFACT:
+        if _functions[func.__name__]["type"] == ComponentType.ARTIFACT:
             flattened_artifacts.append((func.__name__, config))
         else:
             flattened_predictors.append((func.__name__, config))

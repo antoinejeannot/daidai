@@ -22,11 +22,19 @@ P = typing.ParamSpec("P")
 R = typing.TypeVar("R")
 
 
-def component_decorator(kind: ComponentType):
+def component_decorator(
+    component_type: ComponentType,
+):
+    if component_type not in (ComponentType.ARTIFACT, ComponentType.PREDICTOR):
+        raise ValueError(
+            f"Invalid component type {component_type}. "
+            f"Must be one of {ComponentType.ARTIFACT}, {ComponentType.PREDICTOR}"
+        )
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         _functions[func.__name__] = Metadata(
             dependencies=[],
-            kind=kind,
+            type=component_type,
             function=func,
             files=[],
         )
@@ -118,7 +126,7 @@ def component_decorator(kind: ComponentType):
                 func,
                 config,
             )
-            return result() if kind == ComponentType.PREDICTOR else result
+            return result() if component_type == ComponentType.PREDICTOR else result
 
         wrapper.__wrapped_component__ = True
         return wrapper

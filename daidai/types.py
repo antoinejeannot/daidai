@@ -12,6 +12,7 @@ logger = get_logger(__name__)
 class ComponentType(enum.Enum):
     PREDICTOR = "predictor"
     ARTIFACT = "artifact"
+    FILE = "file"
 
 
 class Metadata(typing.TypedDict):

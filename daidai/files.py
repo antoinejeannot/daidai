@@ -107,8 +107,7 @@ def load_file_dependency(
     raw_path = options.get("path") or uri  # Fall back to the full URI if needed
 
     lock_key = f"{protocol}://{raw_path}"
-    file_lock = _get_file_lock(lock_key)
-    with file_lock:
+    with _get_file_lock(lock_key):
         return _load_file_dependency_impl(uri, files_params, protocol, raw_path)
 
 
