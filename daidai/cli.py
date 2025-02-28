@@ -1,3 +1,4 @@
+import collections
 import importlib
 import importlib.util
 import sys
@@ -13,6 +14,7 @@ logger = get_logger(__name__)
 try:
     import click
     from rich.console import Console
+    from rich.text import Text
     from rich.tree import Tree
 
 except ImportError as e:
@@ -125,17 +127,12 @@ def render_rich_components(
                     file["config"]["cache_strategy"].value
                 )
 
-    # Files (new top-level node)
     if component_type in (ComponentType.FILE, "all"):
         files_tree = components_tree.add("📄 Files")
         for file_uri, file_info in all_files.items():
             file_node = files_tree.add(f"[bold cyan]{file_uri}[/]")
-
-            # Show cache strategies
             strategies_str = ", ".join(file_info["cache_strategies"])
             file_node.add(f"Cache strategies: {strategies_str}")
-
-            # Show which components use this file
             usage_node = file_node.add("Used by:")
             for usage in file_info["used_by"]:
                 usage_node.add(
@@ -207,6 +204,54 @@ def render_rich_components(
     console.print(components_tree)
 
 
+def render_raw_components(
+    data: dict[str, list[dict[str, Any]]],
+    component_type: ComponentType | Literal["all"],
+    cache_strategy: FileDependencyCacheStrategy | None,
+) -> None:
+    console = Console()
+    output_sections = collections.defaultdict(set)
+
+    if component_type in (ComponentType.FILE, "all"):
+        for component_type_s in data:
+            for component in data[component_type_s]:
+                for file in component["files"]:
+                    if (
+                        cache_strategy
+                        and "cache_strategy" in file["config"]
+                        and cache_strategy != file["config"]["cache_strategy"]
+                    ):
+                        continue
+                    output_sections["files"].add(file["uri"])
+
+    if component_type in (ComponentType.ARTIFACT, "all"):
+        for artifact in data["artifacts"]:
+            output_sections["artifacts"].add(artifact["name"])
+
+    if component_type in (ComponentType.PREDICTOR, "all"):
+        for predictor in data["predictors"]:
+            output_sections["predictors"].add(predictor["name"])
+
+    for i, (section, items) in enumerate(output_sections.items()):
+        if i > 0:
+            console.print()
+
+        if component_type == "all":
+            section_header = Text()
+            section_header.append("[", style="bold white")
+            section_header.append(section, style="bold cyan")
+            section_header.append("]", style="bold white")
+            console.print(section_header)
+
+        for item in sorted(items):
+            if section == "files":
+                console.print(item, style="cyan")
+            elif section == "artifacts":
+                console.print(item, style="green")
+            elif section == "predictors":
+                console.print(item, style="magenta")
+
+
 @click.group()
 def cli(): ...
 
@@ -229,8 +274,8 @@ def cli(): ...
 @click.option(
     "-f",
     "--format",
-    type=click.Choice(["text", "rich"]),
-    default="rich",
+    type=click.Choice(["raw", "tree"]),
+    default="tree",
     help="Output format",
 )
 def list(module, component_type, cache_strategy, format):
@@ -246,9 +291,13 @@ def list(module, component_type, cache_strategy, format):
         ComponentType(component_type.rstrip("s")) if component_type != "all" else "all"
     )
     components = collect_components(_functions)
-    if format == "rich":
-        render_rich_components(components, component_type, cache_strategy)
-        return
+    match format:
+        case "tree":
+            render_rich_components(components, component_type, cache_strategy)
+        case "raw":
+            render_raw_components(components, component_type, cache_strategy)
+        case _:
+            raise ValueError(f"Unknown output format: {format}")
 
 
 if __name__ == "__main__":
