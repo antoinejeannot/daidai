@@ -21,7 +21,7 @@
 <details open>
 <summary>🎧 Stop reading, listen to daidai 🍊's podcast instead 🎙️</summary>
 
-https://github.com/user-attachments/assets/02e164de-242f-420f-963b-15083f227146
+[![YouTube](http://i.ytimg.com/vi/ZFaAxzrvucc/hqdefault.jpg)](https://www.youtube.com/watch?v=ZFaAxzrvucc)
 
 _Powered by [NotebookLM](https://notebooklm.google.com/notebook/e273780a-e0db-457f-bb5b-cca0778abe9d/audio)_
 </details>

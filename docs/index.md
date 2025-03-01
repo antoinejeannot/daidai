@@ -18,6 +18,11 @@
 
 🚧 **daidai** is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, but feel free to give it a try :) 🚧
 
+??? note "🎧 Stop reading, listen to daidai 🍊's podcast instead 🎙️"
+
+    [![YouTube](http://i.ytimg.com/vi/ZFaAxzrvucc/hqdefault.jpg)](https://www.youtube.com/watch?v=ZFaAxzrvucc)
+
+
 ## Why daidai?
 
 Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
