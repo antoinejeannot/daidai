@@ -1,4 +1,4 @@
-from daidai.decorators import asset, predictor
+from daidai.decorators import Asset, Predictor, asset, predictor
 from daidai.managers import ModelManager
 
-__all__ = ["ModelManager", "asset", "predictor"]
+__all__ = ["Asset", "ModelManager", "Predictor", "asset", "predictor"]
