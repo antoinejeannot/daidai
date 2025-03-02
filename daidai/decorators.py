@@ -102,21 +102,29 @@ class Predictor:
         self.fn = fn
         self.fn_params = fn_params
 
-        if not inspect.isfunction(self.fn):
-            logger.error(f"fn must be a user-defined function, got {type(self.fn)}")
-            raise TypeError(f"fn must be a user-defined function, got {type(self.fn)}")
-
-        if self.fn.__name__ not in _functions:
+        if not inspect.isfunction(fn):
             logger.error(
-                f"fn {self.fn.__name__} is not registered, register it with @predictor"
+                f"{fn.__name__} must be a user-defined function, got {type(fn)}"
+            )
+            raise TypeError(
+                f"{fn.__name__} must be a user-defined function, got {type(fn)}"
+            )
+
+        if fn.__name__ not in _functions:
+            logger.error(
+                f"{fn.__name__} is not registered, register it with @predictor"
             )
             raise ValueError(
-                f"fn {self.fn.__name__} is not registered, register it with @predictor"
+                f"{fn.__name__} is not registered, register it with @predictor"
             )
 
-        if _functions[self.fn.__name__]["type"] != ComponentType.PREDICTOR:
-            logger.error(f"fn {self.fn.__name__} is not a predictor")
-            raise TypeError(f"fn {self.fn.__name__} is not a predictor")
+        if _functions[fn.__name__]["type"] != ComponentType.PREDICTOR:
+            logger.error(
+                f"{fn.__name__} is not a predictor, but an {_functions[fn.__name__]['type'].value}"
+            )
+            raise TypeError(
+                f"{fn.__name__} is not a predictor, but an {_functions[fn.__name__]['type'].value}"
+            )
 
     def get_args(self) -> dict[str, Any]:
         return self.fn_params
