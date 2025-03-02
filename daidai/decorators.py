@@ -58,21 +58,27 @@ class Asset:
         self.open_options = open_options or OpenOptions()
         self.deserialization = deserialization or Deserialization()
 
-        if not inspect.isfunction(self.fn):
-            logger.error(f"fn must be a user-defined function, got {type(self.fn)}")
-            raise TypeError(f"fn must be a user-defined function, got {type(self.fn)}")
-
-        if self.fn.__name__ not in _functions:
+        if not inspect.isfunction(fn):
             logger.error(
-                f"fn {self.fn.__name__} is not registered, register it with @asset"
+                f"{fn.__name__} must be a user-defined function, got {type(self.fn)}"
             )
-            raise ValueError(
-                f"fn {self.fn.__name__} is not registered, register it with @asset"
+            raise TypeError(
+                f"{fn.__name__} must be a user-defined function, got {type(self.fn)}"
             )
 
-        if _functions[self.fn.__name__]["type"] != ComponentType.ASSET:
-            logger.error(f"fn {self.fn.__name__} is not an asset")
-            raise TypeError(f"fn {self.fn.__name__} is not an asset")
+        if fn.__name__ not in _functions:
+            logger.error(f"{fn.__name__} is not registered, register it with @asset")
+            raise ValueError(
+                f"{fn.__name__} is not registered, register it with @asset"
+            )
+
+        if _functions[fn.__name__]["type"] != ComponentType.ASSET:
+            logger.error(
+                f"{fn.__name__} is not an asset, but a {_functions[fn.__name__]['type'].value}"
+            )
+            raise TypeError(
+                f"{fn.__name__} is not an asset, but a {_functions[fn.__name__]['type'].value}"
+            )
 
         if not isinstance(self.cache_strategy, ArtifactCacheStrategy):
             logger.error(
@@ -130,6 +136,73 @@ class Predictor:
         return self.fn_params
 
 
+class Artifact:
+    def __init__(
+        self,
+        uri: str,
+        *,
+        cache_strategy: str | ArtifactCacheStrategy = CONFIG.cache_strategy,
+        cache_directory: str | Path = CONFIG.cache_dir,
+        open_options: dict[str, Any] | None = None,
+        deserialization: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = None,
+        force_download: bool | None = CONFIG.force_download,
+        expected_type: type | None = None,
+    ) -> None:
+        self.uri = uri  # TODO: validate uri ?
+        self.expected_type = expected_type
+        self.cache_strategy = (
+            cache_strategy
+            if isinstance(cache_strategy, ArtifactCacheStrategy)
+            else ArtifactCacheStrategy(cache_strategy)
+        )
+        self.cache_directory = (
+            cache_directory
+            if isinstance(cache_directory, Path)
+            else Path(cache_directory)
+        )
+        self.open_options = open_options or OpenOptions()
+        self.deserialization = deserialization or Deserialization()
+        self.storage_options = storage_options or {}
+        self.force_download = force_download
+        self.validated = False
+
+    def validate(self) -> "Artifact":
+        if self.deserialization.get("format") not in (None, self.expected_type):
+            raise TypeError(
+                f"Deserialization format {self.deserialization.get('format')}"
+                f"does not match the expected type {self.expected_type}"
+            )
+        self.deserialization["format"] = self.expected_type
+        if self.expected_type is Path and self.open_options.get("mode"):
+            raise ValueError(
+                "Cannot specify mode for Path objects. Use 'str' or 'bytes' instead."
+            )
+        if self.expected_type is bytes or self.expected_type is BinaryIO:
+            self.open_options.setdefault("mode", "rb")
+            if self.open_options["mode"] != "rb":
+                raise ValueError("Cannot read bytes in text mode. Use 'rb' instead.")
+            self.open_options["mode"] = "rb"
+        elif self.expected_type is str or self.expected_type is TextIO:
+            self.open_options.setdefault("mode", "r")
+            if self.open_options["mode"] != "r":
+                raise ValueError("Cannot read text in binary mode. Use 'r' instead.")
+        self.validated = True
+        return self
+
+    def get_args(self) -> dict[str, Any]:
+        if not self.validated:
+            raise ValueError("Artifact not validated before getting arguments")
+        return {
+            "cache_strategy": self.cache_strategy,
+            "cache_directory": self.cache_directory,
+            "open_options": self.open_options,
+            "deserialization": self.deserialization,
+            "storage_options": self.storage_options,
+            "force_download": self.force_download,
+        }
+
+
 def component_decorator(
     component_type: ComponentType,
 ):
@@ -163,53 +236,25 @@ def component_decorator(
             origin_type = typing.get_origin(typing_args[0]) or typing_args[0]
             if (
                 typing_args[0] in VALID_TYPES or origin_type is Generator
-            ) and isinstance(typing_args[1], str):
-                # Artifact, e.g. Annotated[Path, "s3://bucket/file"]
-                # only check for a string as the second argument
-                # TODO: narrow down the check to a valid URI
-                artifact_uri = typing_args[1]
-                artifact_params = typing_args[2] if len(typing_args) > 2 else {}
-                open_options = artifact_params.setdefault("open_options", {})
-                deserialization = artifact_params.setdefault("deserialization", {})
-                if deserialization.get("format") not in (None, typing_args[0]):
+            ) and isinstance(typing_args[1], str | Artifact):
+                artifact = (
+                    Artifact(
+                        uri=typing_args[1],
+                        expected_type=typing_args[0],
+                        **(typing_args[2] if len(typing_args) > 2 else {}),
+                    )
+                    if isinstance(typing_args[1], str)
+                    else typing_args[1]
+                )
+                if artifact.expected_type is None:
+                    artifact.expected_type = typing_args[0]
+                elif artifact.expected_type != typing_args[0]:
                     raise TypeError(
-                        f"Deserialization format {deserialization.get('format')} "
-                        f"does not match the expected type {typing_args[0]}"
+                        f"Expected type {artifact.expected_type} does not match the annotated type {typing_args[0]}"
                     )
-                deserialization["format"] = typing_args[0]
-                if typing_args[0] is Path and open_options.get("mode"):
-                    raise ValueError(
-                        "Cannot specify mode for Path objects. Use 'str' or 'bytes' instead."
-                    )
-                if typing_args[0] is bytes or typing_args[0] is BinaryIO:
-                    open_options.setdefault("mode", "rb")
-                    if open_options["mode"] != "rb":
-                        raise ValueError(
-                            "Cannot read bytes in text mode. Use 'rb' instead."
-                        )
-                    open_options["mode"] = "rb"
-                elif typing_args[0] is str or typing_args[0] is TextIO:
-                    open_options.setdefault("mode", "r")
-                    if open_options["mode"] != "r":
-                        raise ValueError(
-                            "Cannot read text in binary mode. Use 'r' instead."
-                        )
-                artifact_params["cache_strategy"] = (
-                    ArtifactCacheStrategy(artifact_params["cache_strategy"])
-                    if artifact_params.get("cache_strategy")
-                    else CONFIG.cache_strategy
-                )
-                artifact_params["storage_options"] = (
-                    artifact_params.get("storage_options") or {}
-                )
-                artifact_params["open_options"] = (
-                    artifact_params.get("open_options") or {}
-                )
-                artifact_params["force_download"] = (
-                    artifact_params.get("force_download") or CONFIG.force_download
-                )
+                artifact.validate()
                 _functions[func.__name__]["artifacts"].append(
-                    (param_name, artifact_uri, artifact_params)
+                    (param_name, artifact.uri, artifact.get_args())
                 )
                 continue
             dependency = typing_args[1:]
