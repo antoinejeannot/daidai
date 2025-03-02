@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 class ComponentType(enum.Enum):
     PREDICTOR = "predictor"
     ASSET = "asset"
-    FILE = "file"
+    ARTIFACT = "artifact"
 
 
 class Metadata(typing.TypedDict):
@@ -20,27 +20,29 @@ class Metadata(typing.TypedDict):
     dependencies: list[
         tuple[str, typing.Callable, dict[str, typing.Any]]
     ]  # (param_name, dep_func, dep_func_args)
-    files: list[tuple[str, str, dict[str, typing.Any]]]
-    # (param_name, files_uri, files_args)
+    artifacts: list[tuple[str, str, dict[str, typing.Any]]]
+    # (param_name, artifacts_uri, artifacts_args)
     function: typing.Callable
 
 
-class FileDependencyCacheStrategy(enum.Enum):
+class ArtifactCacheStrategy(enum.Enum):
     ON_DISK: Annotated[str, "Fetch and store on permanently on disk"] = "on_disk"
     ON_DISK_TEMP: Annotated[str, "Fetch and temporarily store on disk"] = (
         "on_disk_temporary"
     )
-    NO_CACHE: Annotated[str, "Do not cache the file"] = "no_cache"
+    NO_CACHE: Annotated[str, "Do not cache the artifact"] = "no_cache"
 
 
-class FileDependencyParams(TypedDict):
+class ArtifactParams(TypedDict):
     storage_options: Annotated[
         dict[str, Any], "see fsspec storage options for more details"
     ]
     open_options: Annotated[dict[str, Any], "see fsspec open options for more details"]
-    deserialization: Annotated[dict[str, Any], "deserialization options for the file"]
-    cache_strategy: Annotated[FileDependencyCacheStrategy, "cache strategy to use"]
-    force_download: Annotated[bool, "force download the file(s)"]
+    deserialization: Annotated[
+        dict[str, Any], "deserialization options for the artifact"
+    ]
+    cache_strategy: Annotated[ArtifactCacheStrategy, "cache strategy to use"]
+    force_download: Annotated[bool, "force download artifact(s)"]
 
 
 VALID_TYPES = (

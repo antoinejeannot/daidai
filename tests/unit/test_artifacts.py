@@ -2,7 +2,7 @@ from pathlib import Path, PosixPath
 
 import pytest
 
-from daidai.files import _compute_target_path
+from daidai.artifacts import _compute_target_path
 
 
 @pytest.mark.parametrize(

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from daidai.logs import get_logger
 from daidai.types import (
-    FileDependencyCacheStrategy as CacheStrategy,
+    ArtifactCacheStrategy as CacheStrategy,
 )
 
 logger = get_logger(__name__)

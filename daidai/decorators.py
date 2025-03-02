@@ -16,9 +16,9 @@ from daidai.managers import (
 )
 from daidai.types import (
     VALID_TYPES,
+    ArtifactCacheStrategy,
     ComponentType,
     Deserialization,
-    FileDependencyCacheStrategy,
     OpenOptions,
 )
 
@@ -34,7 +34,7 @@ class Asset:
         fn: Callable[P, R],
         *,
         force_download: bool = CONFIG.force_download,
-        cache_strategy: str | FileDependencyCacheStrategy = CONFIG.cache_strategy,
+        cache_strategy: str | ArtifactCacheStrategy = CONFIG.cache_strategy,
         cache_directory: str | Path = CONFIG.cache_dir,
         storage_options: dict[str, Any] | None = None,
         open_options: dict | None = None,
@@ -46,8 +46,8 @@ class Asset:
         self.force_download = force_download
         self.cache_strategy = (
             cache_strategy
-            if isinstance(cache_strategy, FileDependencyCacheStrategy)
-            else FileDependencyCacheStrategy(cache_strategy)
+            if isinstance(cache_strategy, ArtifactCacheStrategy)
+            else ArtifactCacheStrategy(cache_strategy)
         )
         self.cache_directory = (
             cache_directory
@@ -74,12 +74,12 @@ class Asset:
             logger.error(f"fn {self.fn.__name__} is not an asset")
             raise TypeError(f"fn {self.fn.__name__} is not an asset")
 
-        if not isinstance(self.cache_strategy, FileDependencyCacheStrategy):
+        if not isinstance(self.cache_strategy, ArtifactCacheStrategy):
             logger.error(
-                f"cache_strategy must be FileDependencyCacheStrategy, got {type(self.cache_strategy)}"
+                f"cache_strategy must be ArtifactCacheStrategy, got {type(self.cache_strategy)}"
             )
             raise TypeError(
-                f"cache_strategy must be FileDependencyCacheStrategy, got {type(self.cache_strategy)}"
+                f"cache_strategy must be ArtifactCacheStrategy, got {type(self.cache_strategy)}"
             )
 
         if self.open_options.get("mode") not in ("r", "rb", None):
@@ -89,7 +89,7 @@ class Asset:
 
     def get_args(self) -> dict[str, Any]:
         # TODO: pass the cache_strategy, cache_directory, storage_options, open_options, deserialization
-        # to the underlying File dependencies and return them here
+        # to the underlying artifacts and return them here
         return self.fn_params
 
 
@@ -136,7 +136,7 @@ def component_decorator(
             dependencies=[],
             type=component_type,
             function=func,
-            files=[],
+            artifacts=[],
         )
         hints = typing.get_type_hints(func, include_extras=True)
         sig = inspect.signature(func)
@@ -156,13 +156,13 @@ def component_decorator(
             if (
                 typing_args[0] in VALID_TYPES or origin_type is Generator
             ) and isinstance(typing_args[1], str):
-                # File dependency, e.g. Annotated[Path, "s3://bucket/file"]
+                # Artifact, e.g. Annotated[Path, "s3://bucket/file"]
                 # only check for a string as the second argument
                 # TODO: narrow down the check to a valid URI
-                files_uri = typing_args[1]
-                files_params = typing_args[2] if len(typing_args) > 2 else {}
-                open_options = files_params.setdefault("open_options", {})
-                deserialization = files_params.setdefault("deserialization", {})
+                artifact_uri = typing_args[1]
+                artifact_params = typing_args[2] if len(typing_args) > 2 else {}
+                open_options = artifact_params.setdefault("open_options", {})
+                deserialization = artifact_params.setdefault("deserialization", {})
                 if deserialization.get("format") not in (None, typing_args[0]):
                     raise TypeError(
                         f"Deserialization format {deserialization.get('format')} "
@@ -186,20 +186,22 @@ def component_decorator(
                         raise ValueError(
                             "Cannot read text in binary mode. Use 'r' instead."
                         )
-                files_params["cache_strategy"] = (
-                    FileDependencyCacheStrategy(files_params["cache_strategy"])
-                    if files_params.get("cache_strategy")
+                artifact_params["cache_strategy"] = (
+                    ArtifactCacheStrategy(artifact_params["cache_strategy"])
+                    if artifact_params.get("cache_strategy")
                     else CONFIG.cache_strategy
                 )
-                files_params["storage_options"] = (
-                    files_params.get("storage_options") or {}
+                artifact_params["storage_options"] = (
+                    artifact_params.get("storage_options") or {}
                 )
-                files_params["open_options"] = files_params.get("open_options") or {}
-                files_params["force_download"] = (
-                    files_params.get("force_download") or CONFIG.force_download
+                artifact_params["open_options"] = (
+                    artifact_params.get("open_options") or {}
                 )
-                _functions[func.__name__]["files"].append(
-                    (param_name, files_uri, files_params)
+                artifact_params["force_download"] = (
+                    artifact_params.get("force_download") or CONFIG.force_download
+                )
+                _functions[func.__name__]["artifacts"].append(
+                    (param_name, artifact_uri, artifact_params)
                 )
                 continue
             dependency = typing_args[1:]

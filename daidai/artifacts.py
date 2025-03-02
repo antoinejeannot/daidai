@@ -11,8 +11,8 @@ from daidai.config import CONFIG
 from daidai.logs import get_logger
 from daidai.types import (
     VALID_FORMAT_TYPES,
-    FileDependencyCacheStrategy,
-    FileDependencyParams,
+    ArtifactCacheStrategy,
+    ArtifactParams,
 )
 
 logger = get_logger(__name__)
@@ -23,18 +23,18 @@ try:
     has_fsspec = True
 except ImportError:
     has_fsspec = False
-    logger.info("pympler is not installed, file dependencies will not work")
+    logger.info("fsspec is not installed, artifacts disabled")
 
-_file_locks = WeakValueDictionary()
-_file_locks_lock = threading.RLock()  # Lock for the locks themselves
-
-
-def _get_file_lock(file_path: str) -> threading.RLock:
-    with _file_locks_lock:
-        return _file_locks.setdefault(file_path, threading.RLock())
+_artifact_locks = WeakValueDictionary()
+_artifact_locks_lock = threading.RLock()  # Lock for the locks themselves
 
 
-def _deserialize_local_file(
+def _get_artifact_lock(artifact_path: str) -> threading.RLock:
+    with _artifact_locks_lock:
+        return _artifact_locks.setdefault(artifact_path, threading.RLock())
+
+
+def _deserialize_local_artifact(
     path: str, open_options: dict[str, Any], format: VALID_FORMAT_TYPES
 ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
     path: Path = Path(path).expanduser().resolve()
@@ -95,28 +95,28 @@ def _compute_target_path(
     return target_dir, target, source_uri
 
 
-def load_file_dependency(
-    uri: str, files_params: FileDependencyParams
+def load_artifact(
+    uri: str, artifact_params: ArtifactParams
 ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
     if not has_fsspec:
         raise ImportError(
-            "fsspec is not installed. To use file dependencies, install the files extra: `pip install daidai[files]`"
+            "fsspec is not installed. To use artifacts, install the artifacts optional: `pip install daidai[artifacts]`"
         )
     options = fsspec.utils.infer_storage_options(uri)
     protocol = options.get("protocol", "file")
     raw_path = options.get("path") or uri  # Fall back to the full URI if needed
 
     lock_key = f"{protocol}://{raw_path}"
-    with _get_file_lock(lock_key):
-        return _load_file_dependency_impl(uri, files_params, protocol, raw_path)
+    with _get_artifact_lock(lock_key):
+        return _load_artifact_impl(uri, artifact_params, protocol, raw_path)
 
 
-def _load_file_dependency_impl(
-    uri: str, files_params: FileDependencyParams, protocol: str, raw_path: str
+def _load_artifact_impl(
+    uri: str, artifact_params: ArtifactParams, protocol: str, raw_path: str
 ) -> str | bytes | Path | BinaryIO | TextIO | Generator[str] | Generator[bytes]:
-    fs = fsspec.filesystem(protocol, **files_params["storage_options"])
-    open_options = files_params["open_options"]
-    deserialization = files_params["deserialization"]
+    fs = fsspec.filesystem(protocol, **artifact_params["storage_options"])
+    open_options = artifact_params["open_options"]
+    deserialization = artifact_params["deserialization"]
     is_dir = fs.isdir(raw_path) if hasattr(fs, "isdir") else False
     is_file = fs.isfile(raw_path) if hasattr(fs, "isfile") else not is_dir
     if is_dir and is_file:
@@ -125,38 +125,44 @@ def _load_file_dependency_impl(
         raise ValueError(
             f"Cannot specify read mode or format for directories: {uri} is a directory"
         )
-    if files_params["cache_strategy"] in (
-        FileDependencyCacheStrategy.ON_DISK,
-        FileDependencyCacheStrategy.ON_DISK_TEMP,
+    if artifact_params["cache_strategy"] in (
+        ArtifactCacheStrategy.ON_DISK,
+        ArtifactCacheStrategy.ON_DISK_TEMP,
     ):
         return _handle_disk_cache(
-            protocol, raw_path, fs, files_params, is_file, open_options, deserialization
+            protocol,
+            raw_path,
+            fs,
+            artifact_params,
+            is_file,
+            open_options,
+            deserialization,
         )
 
-    if files_params["cache_strategy"] == FileDependencyCacheStrategy.NO_CACHE:
+    if artifact_params["cache_strategy"] == ArtifactCacheStrategy.NO_CACHE:
         return _handle_no_cache(protocol, raw_path, open_options, deserialization)
 
     logger.error(
         "Unsupported cache strategy",
         uri=uri,
-        cache_strategy=files_params["cache_strategy"],
-        files_params=files_params,
+        cache_strategy=artifact_params["cache_strategy"],
+        artifact_params=artifact_params,
     )
-    raise ValueError(f"Unsupported cache strategy: {files_params['cache_strategy']}")
+    raise ValueError(f"Unsupported cache strategy: {artifact_params['cache_strategy']}")
 
 
 def _handle_disk_cache(
     protocol: str,
     raw_path: str,
     fs,
-    files_params: FileDependencyParams,
+    artifact_params: ArtifactParams,
     is_file: bool,
     open_options: dict,
     deserialization: dict,
 ) -> Any:
     cache_dir: Path = (
         CONFIG.cache_dir
-        if files_params["cache_strategy"] == FileDependencyCacheStrategy.ON_DISK
+        if artifact_params["cache_strategy"] == ArtifactCacheStrategy.ON_DISK
         else CONFIG.cache_dir_tmp
     )
     target_dir, target, source_uri = _compute_target_path(
@@ -164,11 +170,11 @@ def _handle_disk_cache(
     )
     success = target.with_suffix(target.suffix + ".SUCCESS")
     need_download = (
-        files_params["force_download"] or not success.exists() or not target.exists()
+        artifact_params["force_download"] or not success.exists() or not target.exists()
     )
     try:
         if not need_download:
-            logger.debug("Cache hit, using cached file", target=target)
+            logger.debug("Cache hit, using cached artifact", target=target)
         else:
             target_dir.mkdir(parents=True, exist_ok=True)
             if is_file:
@@ -176,12 +182,14 @@ def _handle_disk_cache(
             else:
                 fs.cp(source_uri, str(target_dir), recursive=True)
             success.touch()
-        return _deserialize_local_file(target, open_options, deserialization["format"])
+        return _deserialize_local_artifact(
+            target, open_options, deserialization["format"]
+        )
     except Exception as e:
         with contextlib.suppress(Exception):
             success.unlink(missing_ok=True)
         logger.error(
-            "Failed to copy file(s)",
+            "Failed to copy artifact(s)",
             source=source_uri,
             target=target,
             error=str(e),
@@ -195,7 +203,7 @@ def _handle_no_cache(
 ) -> Any:
     """Handle no-cache strategy."""
     if protocol == "file":
-        return _deserialize_local_file(
+        return _deserialize_local_artifact(
             raw_path, open_options, deserialization["format"]
         )
 

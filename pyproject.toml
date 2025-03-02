@@ -52,13 +52,13 @@ cli = [
     "click>=8.0.1",
     "rich>=13.9.4",
 ]
-files = [
+artifacts = [
     "fsspec>=2025.2.0",
 ]
 memory = [
     "pympler>=1.1",
 ]
-all = ["daidai[files, memory]"]
+all = ["daidai[artifacts, memory]"]
 publish = [
     "build>=1.2.2.post1",
     "twine>=6.1.0",
@@ -73,7 +73,7 @@ dev = [
     "ruff==0.9.7",
     "pytest>=8.3.4",
     "bandit[toml]>=1.8.3",
-    "daidai[files, memory, cli]",
+    "daidai[artifacts, memory, cli]",
 ]
 
 [project.scripts]

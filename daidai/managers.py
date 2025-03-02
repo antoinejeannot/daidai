@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable, Generator, Iterable
 from typing import Any
 
-from daidai.files import load_file_dependency
+from daidai.artifacts import load_artifact
 from daidai.logs import get_logger
 from daidai.types import (
     ComponentLoadError,
@@ -176,39 +176,39 @@ def _load_one_asset_or_predictor(
         type=component_type.value,
         config=config,
     )
-    # whether the function is an asset or a predictor, it can have files dependencies
-    files = _functions[func.__name__]["files"]
-    for param_name, uri, files_params in files:
+    # whether the function is an asset or a predictor, it can have artifacts
+    artifacts = _functions[func.__name__]["artifacts"]
+    for param_name, uri, artifact_params in artifacts:
         logger.debug(
-            "Processing files dependency",
+            "Processing artifact",
             component=func.__name__,
             param_name=param_name,
             dependency=uri,
-            params=files_params,
+            params=artifact_params,
         )
         if param_name in config:
             logger.debug(
-                "Skipping files dependency resolution",
+                "Skipping artifact dependency resolution",
                 component=func.__name__,
                 dependency=uri,
                 cause="dependency passed in config",
             )
             continue
-        cache_key = _create_cache_key(files_params)
-        file_dependency = _get_from_cache(
-            namespace, "file/" + uri, cache_key
-        )  # file/ to avoid collision with function names
-        if file_dependency:
+        cache_key = _create_cache_key(artifact_params)
+        artifact = _get_from_cache(
+            namespace, "artifact/" + uri, cache_key
+        )  # artifact/ to avoid collision with function names
+        if artifact:
             logger.debug(
-                "Using cached file",
-                name="file/" + uri,
+                "Using cached artifact",
+                name="artifact/" + uri,
                 cache_key=str(cache_key),
                 elapsed=round(time.perf_counter() - t0, 9),
             )
         else:
-            file_dependency = load_file_dependency(uri, files_params)
-            _cache_value(namespace, "file/" + uri, cache_key, file_dependency)
-        prepared_args[param_name] = file_dependency
+            artifact = load_artifact(uri, artifact_params)
+            _cache_value(namespace, "artifact/" + uri, cache_key, artifact)
+        prepared_args[param_name] = artifact
     # For predictors, we don't cache the function itself, just its asset dependencies
     if component_type == ComponentType.PREDICTOR:
         dependencies = _functions[func.__name__]["dependencies"]
@@ -362,12 +362,12 @@ def extract_dependencies_to_load(
     assets_or_predictors: dict[Callable, dict[str, Any] | None],
 ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
     """
-    Extract all file dependencies from components in a flat structure for parallel resolution.
+    Extract all artifacts from components in a flat structure for parallel resolution.
     """
     visited = set()
     flattened_predictors = []
     flattened_assets = []
-    flattened_file_deps = []
+    flattened_artifact_deps = []
     queue = collections.deque(assets_or_predictors.items())
     while queue:
         func, config = queue.popleft()
@@ -386,19 +386,19 @@ def extract_dependencies_to_load(
             flattened_assets.append((func.__name__, config))
         else:
             flattened_predictors.append((func.__name__, config))
-        files_dependencies = _functions[func.__name__]["files"]
-        for param_name, uri, files_params in files_dependencies:
+        artifacts = _functions[func.__name__]["artifacts"]
+        for param_name, uri, artifact_params in artifacts:
             if param_name in config:
                 # If the dependency is passed in the config, we don't need to resolve
                 continue
-            cache_key = _create_cache_key(files_params | {"__file_uri__": uri})
+            cache_key = _create_cache_key(artifact_params | {"__artifact_uri__": uri})
             if cache_key in visited:
                 continue
             visited.add(cache_key)
-            flattened_file_deps.append((uri, files_params))
+            flattened_artifact_deps.append((uri, artifact_params))
 
     return {
         "predictors": flattened_predictors,
         "assets": flattened_assets,
-        "files": flattened_file_deps,
+        "artifacts": flattened_artifact_deps,
     }

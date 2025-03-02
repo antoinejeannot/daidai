@@ -54,7 +54,7 @@ pip install daidai[all]
 pip install daidai
 
 # With file handling support, disk caching, and fsspec
-pip install daidai[files]
+pip install daidai[artifacts]
 
 # With memory usage tracking
 pip install daidai[memory]
@@ -129,7 +129,7 @@ print(ask("Hello, what's in the picture ?"))
 # >>> The picture features a dog with a black and white coat.
 
 # Or manage lifecycle with context manager for production usage
-# all predictors, assets and files are automatically loaded and cleaned up
+# all predictors, assets and artifacts are automatically loaded and cleaned up
 with ModelManager(preload=[ask]):
     print(ask("Hello, what's in the picture ?"))
 
@@ -164,7 +164,7 @@ _Loaded ML models (or parts of: weights etc.), Embedding models, Customer Config
 Assets have several important characteristics:
 
 1. They are computed once and cached, making them efficient for repeated use
-2. They can depend on other assets or files
+2. They can depend on other assets or artifacts
 3. They are automatically cleaned up when no longer needed
 4. They can implement resource cleanup through generator functions
 
@@ -223,7 +223,7 @@ Where:
 
 When you call a predictor or asset, `daidai` automatically:
 
-1. Identifies all dependencies (predictors, assets and files)
+1. Identifies all dependencies (predictors, assets and artifacts)
 2. Resolves the dependency graph
 3. Loads or retrieves cached dependencies
 4. Injects them into your function
@@ -294,9 +294,9 @@ result = classify_text("Sample text", model=custom_model)
 
 This way, you can easily swap out components for testing, debugging, or A/B testing.
 
-## 📦 File Dependencies
+## 📦 Artifacts
 
-`daidai` provides first-class support for file dependencies through the same annotation system, through the `files` extra: `pip install daidai[files]`
+`daidai` provides first-class support for artifacts through the same annotation system, through the `artifacts` optional: `pip install daidai[artifacts]`
 
 ```python
 @asset
@@ -324,11 +324,11 @@ def word_embeddings(
 
 ### Cache Strategies
 
-`daidai` offers multiple caching strategies for files:
+`daidai` offers multiple caching strategies for artifacts:
 
 - `on_disk`: Download once and keep permanently in the cache directory
 - `on_disk_temporary`: Download to a temporary location, deleted when the process exits
-- `no_cache`: Do not cache the file, fetch it each time. Useful for dynamic content, or when you do not have permission to write to disk
+- `no_cache`: Do not cache the artifact(s), fetch it each time. Useful for dynamic content, or when you do not have permission to write to disk
 
 ### Storage Systems
 
@@ -405,7 +405,7 @@ with ModelManager(preload=[model_v1], namespace="prod"):
 `daidai` implements intelligent caching to optimize performance:
 
 - Assets are cached based on their configuration parameters
-- File dependencies use a content-addressed store for efficient storage
+- Artifacts use a content-addressed store for efficient storage
 - Memory usage is tracked (when pympler is installed, `pip install daidai[memory]`)
 - Cache invalidation is handled automatically based on dependency changes
 
@@ -615,7 +615,7 @@ A few notes:
 
 - Creating separate ModelManager instances (approach #2) might lead to duplicate loading of the same components in memory across threads, while preloading (approach #1) ensures components are shared but requires knowing & loading all components in advance.
 - For most applications, approach #2 (separate managers) provides the safest experience, while approach #1 (preloading) is more memory-efficient and simple to implement for applications with large models.
-- Both approaches benefit from disk caching, so model files are only downloaded once regardless of how many ModelManager instances you create.
+- Both approaches benefit from disk caching, so artifacts are only downloaded once regardless of how many ModelManager instances you create.
 
 ## 🧪 Testing
 
@@ -677,9 +677,9 @@ def test_end_to_end_classification(test_model_manager):
     assert result in ["positive", "negative", "neutral"]
 ```
 
-### Testing File Dependencies
+### Testing Artifacts
 
-For file dependencies, you can use local test files:
+For artifacts, you can use local test files:
 
 ```python
 @asset
