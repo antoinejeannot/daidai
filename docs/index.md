@@ -150,7 +150,9 @@ print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 
 `daidai` is built around a few key concepts that work together to provide a streamlined experience for developing and deploying ML components. The following explains these core concepts and how they interact.
 
-At the heart of `daidai` are two types of components: Assets and Predictors.
+At the heart of `daidai` are three types of components: Assets, Predictors and Artifacts.
+
+> **TL;DR** Predictors are functions that perform computations, Assets are long-lived objects that are expensive to create and should be reused, and Artifacts are the raw files, model weights, and other resources that assets transform into usable components.
 
 ## 🧩 Assets
 
@@ -196,6 +198,44 @@ def classify_text(
     prediction = model(tokens)
     return prediction.label
 ```
+
+## 📦 Artifacts
+
+Artifacts represent the fundamental building blocks in your ML system - the raw files, model weights, configuration data, and other persistent resources that assets transform into usable components.
+They are discrete, versioned resources that can be stored, tracked, and managed across various storage systems.
+
+Artifacts have several important characteristics:
+
+1. They represent raw data resources that require minimal processing to retrieve
+2. They can be stored and accessed from a wide variety of storage systems
+3. They support flexible caching strategies to balance performance and resource usage
+4. They are automatically downloaded, cached, and managed by daidai
+5. They can be deserialized into various formats based on your needs
+
+Artifacts are defined using Python type annotations and are made vailable through the `artifacts` optional: `pip install daidai[artifacts]`
+
+```python
+
+@asset
+def word_embeddings(
+    embeddings_file: Annotated[
+        Path,
+        "s3://bucket/glove.txt",  # Artifact location
+        {"cache_strategy": "on_disk"}
+    ]
+) -> Dict[str, np.ndarray]:
+    with open(embeddings_file) as f:
+        embeddings = {...}
+        return embeddings
+```
+
+## 📦🧩🔮 Working Together
+
+The true power of daidai emerges when `Artifacts`, `Assets`, and `Predictors` work together in a cohesive dependency hierarchy.
+
+This architecture creates a natural progression from raw data to functional endpoints: `Artifacts` (raw files, model weights, configurations) are retrieved from storage systems, `Assets` transform these `artifacts` into reusable, long-lived objects, and `Predictors` utilize these `assets` to perform specific, **business-logic** computations.
+
+This clean separation of concerns allows each component to focus on its specific role while forming part of a larger, integrated system.
 
 ## 💉 Dependency Injection
 
@@ -286,54 +326,42 @@ result = classify_text("Sample text", model=custom_model)
 
 This way, you can easily swap out components for testing, debugging, or A/B testing.
 
-## 📦 Artifacts
-
-`daidai` provides first-class support for artifacts through the same annotation system, through the `artifacts` optional: `pip install daidai[artifacts]`
-
-```python
-@asset
-def word_embeddings(
-    embeddings_file: Annotated[
-        Path,
-        "s3://bucket/glove.txt",
-        {"cache_strategy": "on_disk"}
-    ]
-) -> Dict[str, np.ndarray]:
-    # Load, process and return embeddings as a dict
-```
+## 📦 Artifacts (in-depth)
 
 ### File Types
 
-`daidai` supports various file types through type hints:
+daidai supports various file types through type hints, allowing you to specify exactly how you want to interact with the artifact:
 
-- `Path`: Returns a Path object pointing to the downloaded file
-- `str`: Returns the file content as a string
-- `bytes`: Returns the file content as bytes
-- `TextIO`: Returns a text file handle (similar to `open(file, "r")`)
-- `BinaryIO`: Returns a binary file handle (similar to `open(file, "rb")`)
-- `Generator[str]`: Returns a generator that yields lines from the file
-- `Generator[bytes]`: Returns a generator that yields chunks of binary data
+- `Path`: Returns a Path object pointing to the downloaded file, ideal for when you need to work with the file using standard file operations
+- `str`: Returns the file content as a string, useful for text-based configurations or small text files
+- `bytes`: Returns the file content as bytes, perfect for binary data like images or serialized models
+- `TextIO`: Returns a text file handle (similar to `open(file, "r")`), best for streaming large text files
+- `BinaryIO`: Returns a binary file handle (similar to `open(file, "rb")`), ideal for streaming large binary files
+- `Generator[str]`: Returns a generator that yields lines from the file, optimal for processing large text files line by line
+- `Generator[bytes]`: Returns a generator that yields chunks of binary data, useful for processing large binary files in chunks
 
 ### Cache Strategies
 
-`daidai` offers multiple caching strategies for artifacts:
+daidai offers multiple caching strategies for artifacts to balance performance, storage use, and reliability:
 
-- `on_disk`: Download once and keep permanently in the cache directory
-- `on_disk_temporary`: Download to a temporary location, deleted when the process exits
-- `no_cache`: Do not cache the artifact(s), fetch it each time. Useful for dynamic content, or when you do not have permission to write to disk
+- `on_disk`: Download once and keep permanently in the cache directory. Ideal for stable artifacts that change infrequently.
+- `on_disk_temporary`: Download to a temporary location, automatically deleted when the process exits. Best for large artifacts needed only for the current session.
+- `no_cache`: Do not cache the artifact, fetch it each time. Useful for dynamic content that changes frequently or when running in environments with limited write permissions.
 
 ### Storage Systems
 
-Thanks to `fsspec` integration, `daidai` supports a wide range of storage systems:
+Thanks to `fsspec` integration, daidai supports a wide range of storage systems, allowing you to retrieve artifacts from virtually anywhere:
 
-- Local file system
-- Amazon S3
-- Google Cloud Storage
-- Microsoft Azure Blob Storage
-- SFTP/FTP
-- HTTP/HTTPS
-- Hugging Face Hub
+- Local file system for development and testing
+- Amazon S3 for cloud-native workflows
+- Google Cloud Storage for GCP-based systems
+- Microsoft Azure Blob Storage for Azure environments
+- SFTP/FTP for legacy or on-premises data
+- HTTP/HTTPS for web-based resources
+- Hugging Face Hub for ML models and datasets
 - And many more through fsspec protocols
+
+This unified access layer means your code remains the same regardless of where your artifacts are stored, making it easy to transition from local development to cloud deployment.
 
 ## 🧹 Resource Lifecycle Management
 
