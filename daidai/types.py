@@ -2,7 +2,7 @@ import enum
 import typing
 from collections.abc import Generator
 from pathlib import Path
-from typing import Annotated, Any, BinaryIO, TextIO, TypedDict
+from typing import Annotated, Any, BinaryIO, Literal, TextIO, TypedDict
 
 from daidai.logs import get_logger
 
@@ -59,6 +59,14 @@ VALID_FORMAT_TYPES = (
     | type[Generator[str]]
     | type[Generator[bytes]]
 )
+
+
+class Deserialization(TypedDict, total=False):
+    format: VALID_FORMAT_TYPES
+
+
+class OpenOptions(TypedDict, total=False):
+    mode: Literal["r", "rb"]
 
 
 class DaiDaiError(Exception):

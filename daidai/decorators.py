@@ -14,12 +14,112 @@ from daidai.managers import (
     _load_one_artifact_or_predictor,
     _namespaces,
 )
-from daidai.types import VALID_TYPES, ComponentType, FileDependencyCacheStrategy
+from daidai.types import (
+    VALID_TYPES,
+    ComponentType,
+    Deserialization,
+    FileDependencyCacheStrategy,
+    OpenOptions,
+)
 
 logger = get_logger(__name__)
 
 P = typing.ParamSpec("P")
 R = typing.TypeVar("R")
+
+
+class Artifact:
+    def __init__(
+        self,
+        fn: Callable[P, R],
+        *,
+        force_download: bool = CONFIG.force_download,
+        cache_strategy: str | FileDependencyCacheStrategy = CONFIG.cache_strategy,
+        cache_directory: str | Path = CONFIG.cache_dir,
+        storage_options: dict[str, Any] | None = None,
+        open_options: dict | None = None,
+        deserialization: dict | None = None,
+        **fn_params,
+    ) -> R:
+        self.fn = fn
+        self.fn_params = fn_params
+        self.force_download = force_download
+        self.cache_strategy = (
+            cache_strategy
+            if isinstance(cache_strategy, FileDependencyCacheStrategy)
+            else FileDependencyCacheStrategy(cache_strategy)
+        )
+        self.cache_directory = (
+            cache_directory
+            if isinstance(cache_directory, Path)
+            else Path(cache_directory)
+        )
+        self.storage_options = storage_options or {}
+        self.open_options = open_options or OpenOptions()
+        self.deserialization = deserialization or Deserialization()
+
+        if not inspect.isfunction(self.fn):
+            logger.error(f"fn must be a user-defined function, got {type(self.fn)}")
+            raise TypeError(f"fn must be a user-defined function, got {type(self.fn)}")
+
+        if self.fn.__name__ not in _functions:
+            logger.error(
+                f"fn {self.fn.__name__} is not registered, register it with @artifact"
+            )
+            raise ValueError(
+                f"fn {self.fn.__name__} is not registered, register it with @artifact"
+            )
+
+        if _functions[self.fn.__name__]["type"] != ComponentType.ARTIFACT:
+            logger.error(f"fn {self.fn.__name__} is not an artifact")
+            raise TypeError(f"fn {self.fn.__name__} is not an artifact")
+
+        if not isinstance(self.cache_strategy, FileDependencyCacheStrategy):
+            logger.error(
+                f"cache_strategy must be FileDependencyCacheStrategy, got {type(self.cache_strategy)}"
+            )
+            raise TypeError(
+                f"cache_strategy must be FileDependencyCacheStrategy, got {type(self.cache_strategy)}"
+            )
+
+        if self.open_options.get("mode") not in ("r", "rb", None):
+            raise ValueError(
+                f"open_options mode must be 'r' or 'rb', got '{self.open_options['mode']}'"
+            )
+
+    def get_args(self) -> dict[str, Any]:
+        # TODO: pass the cache_strategy, cache_directory, storage_options, open_options, deserialization
+        # to the underlying File dependencies and return them here
+        return self.fn_params
+
+
+class Predictor:
+    def __init__(
+        self,
+        fn: Callable,
+        **fn_params,
+    ) -> None:
+        self.fn = fn
+        self.fn_params = fn_params
+
+        if not inspect.isfunction(self.fn):
+            logger.error(f"fn must be a user-defined function, got {type(self.fn)}")
+            raise TypeError(f"fn must be a user-defined function, got {type(self.fn)}")
+
+        if self.fn.__name__ not in _functions:
+            logger.error(
+                f"fn {self.fn.__name__} is not registered, register it with @predictor"
+            )
+            raise ValueError(
+                f"fn {self.fn.__name__} is not registered, register it with @predictor"
+            )
+
+        if _functions[self.fn.__name__]["type"] != ComponentType.PREDICTOR:
+            logger.error(f"fn {self.fn.__name__} is not a predictor")
+            raise TypeError(f"fn {self.fn.__name__} is not a predictor")
+
+    def get_args(self) -> dict[str, Any]:
+        return self.fn_params
 
 
 def component_decorator(
@@ -49,13 +149,16 @@ def component_decorator(
                 continue
             typing_args = typing.get_args(annotation)
             if len(typing_args) < 2:
-                raise ValueError(
-                    f"Missing dependency configuration for parameter {param_name}"
+                raise TypeError(
+                    f"Annotated type hint must have at least 2 arguments, got {len(typing_args)}"
                 )
             origin_type = typing.get_origin(typing_args[0]) or typing_args[0]
             if (
                 typing_args[0] in VALID_TYPES or origin_type is Generator
             ) and isinstance(typing_args[1], str):
+                # File dependency, e.g. Annotated[Path, "s3://bucket/file"]
+                # only check for a string as the second argument
+                # TODO: narrow down the check to a valid URI
                 files_uri = typing_args[1]
                 files_params = typing_args[2] if len(typing_args) > 2 else {}
                 open_options = files_params.setdefault("open_options", {})
@@ -99,19 +202,39 @@ def component_decorator(
                     (param_name, files_uri, files_params)
                 )
                 continue
-
             dependency = typing_args[1:]
-            dep_func: Callable = dependency[0]
-            def_sig = inspect.signature(dep_func)
-            dep_defaults = {
-                k: v.default
-                for k, v in def_sig.parameters.items()
-                if v.default is not inspect.Parameter.empty
-            }
-            dep_func_args: dict[str, Any] = dependency[1] if len(dependency) > 1 else {}
-            _functions[func.__name__]["dependencies"].append(
-                (param_name, dep_func, dep_defaults | dep_func_args)
-            )
+            if not (
+                inspect.isfunction(dependency[0])
+                or isinstance(dependency[0], Artifact | Predictor)
+            ):
+                continue
+            elif inspect.isfunction(dependency[0]):
+                dep_func: Callable = dependency[0]
+                def_sig = inspect.signature(dep_func)
+                dep_defaults = {
+                    k: v.default
+                    for k, v in def_sig.parameters.items()
+                    if v.default is not inspect.Parameter.empty
+                }
+                dep_func_args: dict[str, Any] = (
+                    dependency[1]
+                    if len(dependency) > 1 and isinstance(dependency[1], dict)
+                    else {}
+                )
+                _functions[func.__name__]["dependencies"].append(
+                    (param_name, dep_func, dep_defaults | dep_func_args)
+                )
+            else:
+                dep: Artifact | Predictor = dependency[0]
+                def_sig = inspect.signature(dep.fn)
+                dep_defaults = {
+                    k: v.default
+                    for k, v in def_sig.parameters.items()
+                    if v.default is not inspect.Parameter.empty
+                }
+                _functions[func.__name__]["dependencies"].append(
+                    (param_name, dep.fn, dep_defaults | dep.get_args())
+                )
 
         @functools.wraps(
             func, assigned=(*functools.WRAPPER_ASSIGNMENTS, "__signature__")
