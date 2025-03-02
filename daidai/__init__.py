@@ -1,4 +1,4 @@
-from daidai.decorators import artifact, predictor
+from daidai.decorators import asset, predictor
 from daidai.managers import ModelManager
 
-__all__ = ["ModelManager", "artifact", "predictor"]
+__all__ = ["ModelManager", "asset", "predictor"]

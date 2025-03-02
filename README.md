@@ -50,7 +50,7 @@ Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
 # Full installation with all features
 pip install daidai[all]
 
-# Core functionality of artifacts & predictors
+# Core functionality of assets & predictors
 pip install daidai
 
 # With file handling support, disk caching, and fsspec
@@ -69,19 +69,19 @@ from typing import Annotated, Any
 
 import openai
 
-from daidai import ModelManager, artifact, predictor
+from daidai import ModelManager, asset, predictor
 
-# Define artifacts which are long-lived objects
-# that can be used by multiple predictors, or other artifacts
+# Define assets which are long-lived objects
+# that can be used by multiple predictors, or other assets
 
 
-@artifact
+@asset
 def openai_client(**configuration: dict[str, Any]) -> openai.OpenAI:
     return openai.OpenAI(**configuration)
 
 
 # Fetch a distant file from HTTPS, but it can be from any source: local, S3, GCS, Azure, FTP, HF Hub, etc.
-@artifact
+@asset
 def dogo_picture(
     picture: Annotated[
         bytes,
@@ -92,7 +92,7 @@ def dogo_picture(
     return base64.b64encode(picture).decode("utf-8")
 
 
-# Define a predictor that depends on the previous artifacts
+# Define a predictor that depends on the previous assets
 # which are automatically loaded and passed as an argument
 
 
@@ -124,12 +124,12 @@ def ask(
     return response.choices[0].message.content
 
 
-# daidai takes care of loading dependencies & injecting artifacts!
+# daidai takes care of loading dependencies & injecting assets!
 print(ask("Hello, what's in the picture ?"))
 # >>> The picture features a dog with a black and white coat.
 
 # Or manage lifecycle with context manager for production usage
-# all predictors, artifacts and files are automatically loaded and cleaned up
+# all predictors, assets and files are automatically loaded and cleaned up
 with ModelManager(preload=[ask]):
     print(ask("Hello, what's in the picture ?"))
 
@@ -154,24 +154,24 @@ print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 
 `daidai` is built around a few key concepts that work together to provide a streamlined experience for developing and deploying ML components. The following explains these core concepts and how they interact.
 
-At the heart of `daidai` are two types of components: Artifacts and Predictors.
+At the heart of `daidai` are two types of components: Assets and Predictors.
 
-## 🧩 Artifacts
+## 🧩 Assets
 
-Artifacts represent long-lived objects that are typically expensive to create and should be reused across multiple operations, e.g.:
+Assets represent long-lived objects that are typically expensive to create and should be reused across multiple operations, e.g.:
 _Loaded ML models (or parts of: weights etc.), Embedding models, Customer Configurations, Tokenizers, Database connections, API clients.._
 
-Artifacts have several important characteristics:
+Assets have several important characteristics:
 
 1. They are computed once and cached, making them efficient for repeated use
-2. They can depend on other artifacts or files
+2. They can depend on other assets or files
 3. They are automatically cleaned up when no longer needed
 4. They can implement resource cleanup through generator functions
 
-Artifacts are defined using the `@artifact` decorator:
+Assets are defined using the `@asset` decorator:
 
 ```python
-@artifact
+@asset
 def bert_model(
     model_path: Annotated[Path, "s3://models/bert-base.pt"]
 ) -> BertModel:
@@ -180,11 +180,11 @@ def bert_model(
 
 ## 🔮 Predictors
 
-Predictors are functions that use artifacts to perform actual computations or predictions. Unlike artifacts:
+Predictors are functions that use assets to perform actual computations or predictions. Unlike assets:
 
 1. They are not cached themselves
 2. They are meant to be called repeatedly with different inputs
-3. They can depend on multiple artifacts or even other predictors
+3. They can depend on multiple assets or even other predictors
 4. They focus on the business logic of your application
 
 Predictors are defined using the `@predictor` decorator:
@@ -221,9 +221,9 @@ Where:
 
 ### Automatic Resolution
 
-When you call a predictor or artifact, `daidai` automatically:
+When you call a predictor or asset, `daidai` automatically:
 
-1. Identifies all dependencies (predictors, artifacts and files)
+1. Identifies all dependencies (predictors, assets and files)
 2. Resolves the dependency graph
 3. Loads or retrieves cached dependencies
 4. Injects them into your function
@@ -233,7 +233,7 @@ This happens transparently, so you can focus on your business logic rather than 
 <details open>
 <summary>Simple Dependency Resolution Flowchart</summary>
 
-For a single predictor with one artifact dependency having one file dependency, the dependency resolution flow looks like this:
+For a single predictor with one asset dependency having one file dependency, the dependency resolution flow looks like this:
 
 
 ```mermaid
@@ -243,9 +243,9 @@ flowchart TD
     subgraph "Dependency Resolution"
         B -->|No| D[Resolve Dependencies]
 
-        subgraph "Artifact Resolution"
-            D --> E{Artifact in cache?}
-            E -->|No| G[Resolve Artifact Dependencies]
+        subgraph "Asset Resolution"
+            D --> E{Asset in cache?}
+            E -->|No| G[Resolve Asset Dependencies]
 
             subgraph "File Handling"
                 G --> H{File in cache?}
@@ -256,9 +256,9 @@ flowchart TD
             end
 
             I --> L[Deserialize File to Required Format]
-            L --> M[Compute Artifact with File]
-            M --> N[Cache Artifact]
-            N --> F[Get Cached Artifact]
+            L --> M[Compute Asset with File]
+            M --> N[Cache Asset]
+            N --> F[Get Cached Asset]
             E -->|Yes| F
         end
 
@@ -299,7 +299,7 @@ This way, you can easily swap out components for testing, debugging, or A/B test
 `daidai` provides first-class support for file dependencies through the same annotation system, through the `files` extra: `pip install daidai[files]`
 
 ```python
-@artifact
+@asset
 def word_embeddings(
     embeddings_file: Annotated[
         Path,
@@ -349,10 +349,10 @@ Thanks to `fsspec` integration, `daidai` supports a wide range of storage system
 
 ### Automatic Cleanup
 
-For basic resources, artifacts are automatically released when they're no longer needed. For resources requiring explicit cleanup (like database connections), `daidai` supports generator-based cleanup:
+For basic resources, assets are automatically released when they're no longer needed. For resources requiring explicit cleanup (like database connections), `daidai` supports generator-based cleanup:
 
 ```python
-@artifact
+@asset
 def database_connection(db_url: str):
     # Establish connection
     conn = create_connection(db_url)
@@ -404,7 +404,7 @@ with ModelManager(preload=[model_v1], namespace="prod"):
 
 `daidai` implements intelligent caching to optimize performance:
 
-- Artifacts are cached based on their configuration parameters
+- Assets are cached based on their configuration parameters
 - File dependencies use a content-addressed store for efficient storage
 - Memory usage is tracked (when pympler is installed, `pip install daidai[memory]`)
 - Cache invalidation is handled automatically based on dependency changes
@@ -428,10 +428,10 @@ This ensures your ML components load quickly while minimizing redundant computat
 
 ### Pure Functions as Building Blocks
 
-At its core, `daidai` uses pure functions decorated with `@artifact` and `@predictor` rather than class hierarchies or complex abstractions:
+At its core, `daidai` uses pure functions decorated with `@asset` and `@predictor` rather than class hierarchies or complex abstractions:
 
 ```python
-@artifact
+@asset
 def embedding_model(model_path: Path) -> Model:
     return load_model(model_path)
 
@@ -454,7 +454,7 @@ You can easily integrate `daidai` with external systems and frameworks:
 ```python
 # Integration with existing ML experiment tracking
 import mlflow
-@artifact
+@asset
 def tracked_model(model_id: str, mlflow_uri: str) -> Model:
     mlflow.set_tracking_uri(mlflow_uri)
     model_uri = f"models:/{model_id}/Production"
@@ -580,7 +580,7 @@ However, there are ways to work around this limitation for multi-threaded applic
 1. Create a shared `ModelManager` instance for all threads, but ensure that components are loaded before the threads are started:
 
 ```python
-@artifact
+@asset
 def model(model_path: Annotated[Path, "s3://bucket/model.pkl"]) -> Model:
     with open(model_path, "rb") as f:
         return pickle.load(f)
@@ -600,7 +600,7 @@ with ModelManager(preload=[sentiment_classifier]) as manager:
 2. Create a separate `ModelManager` instance for each thread, each will benefit from the same disk cache but will not share components:
 
 ```python
-# same predictor & artifact definitions as above
+# same predictor & asset definitions as above
 
 def worker_function(data_chunk):
     # Each thread has its own manager and namespace
@@ -623,7 +623,7 @@ A few notes:
 
 ### Unit Testing Components
 
-When unit testing artifacts or predictors, you can manually inject dependencies:
+When unit testing assets or predictors, you can manually inject dependencies:
 
 ```python
 def test_text_classifier():
@@ -638,7 +638,7 @@ def test_text_classifier():
 
 ### Testing with Fixtures
 
-In pytest, you can create fixtures that provide mock artifacts:
+In pytest, you can create fixtures that provide mock assets:
 
 ```python
 import pytest
@@ -682,7 +682,7 @@ def test_end_to_end_classification(test_model_manager):
 For file dependencies, you can use local test files:
 
 ```python
-@artifact
+@asset
 def test_embeddings(
     embeddings_file: Annotated[
         Path,

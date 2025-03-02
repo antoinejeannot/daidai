@@ -11,7 +11,7 @@ from daidai.managers import (
     Metadata,
     _current_namespace,
     _functions,
-    _load_one_artifact_or_predictor,
+    _load_one_asset_or_predictor,
     _namespaces,
 )
 from daidai.types import (
@@ -28,7 +28,7 @@ P = typing.ParamSpec("P")
 R = typing.TypeVar("R")
 
 
-class Artifact:
+class Asset:
     def __init__(
         self,
         fn: Callable[P, R],
@@ -64,15 +64,15 @@ class Artifact:
 
         if self.fn.__name__ not in _functions:
             logger.error(
-                f"fn {self.fn.__name__} is not registered, register it with @artifact"
+                f"fn {self.fn.__name__} is not registered, register it with @asset"
             )
             raise ValueError(
-                f"fn {self.fn.__name__} is not registered, register it with @artifact"
+                f"fn {self.fn.__name__} is not registered, register it with @asset"
             )
 
-        if _functions[self.fn.__name__]["type"] != ComponentType.ARTIFACT:
-            logger.error(f"fn {self.fn.__name__} is not an artifact")
-            raise TypeError(f"fn {self.fn.__name__} is not an artifact")
+        if _functions[self.fn.__name__]["type"] != ComponentType.ASSET:
+            logger.error(f"fn {self.fn.__name__} is not an asset")
+            raise TypeError(f"fn {self.fn.__name__} is not an asset")
 
         if not isinstance(self.cache_strategy, FileDependencyCacheStrategy):
             logger.error(
@@ -125,10 +125,10 @@ class Predictor:
 def component_decorator(
     component_type: ComponentType,
 ):
-    if component_type not in (ComponentType.ARTIFACT, ComponentType.PREDICTOR):
+    if component_type not in (ComponentType.ASSET, ComponentType.PREDICTOR):
         raise ValueError(
             f"Invalid component type {component_type}. "
-            f"Must be one of {ComponentType.ARTIFACT}, {ComponentType.PREDICTOR}"
+            f"Must be one of {ComponentType.ASSET}, {ComponentType.PREDICTOR}"
         )
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
@@ -205,7 +205,7 @@ def component_decorator(
             dependency = typing_args[1:]
             if not (
                 inspect.isfunction(dependency[0])
-                or isinstance(dependency[0], Artifact | Predictor)
+                or isinstance(dependency[0], Asset | Predictor)
             ):
                 continue
             elif inspect.isfunction(dependency[0]):
@@ -225,7 +225,7 @@ def component_decorator(
                     (param_name, dep_func, dep_defaults | dep_func_args)
                 )
             else:
-                dep: Artifact | Predictor = dependency[0]
+                dep: Asset | Predictor = dependency[0]
                 def_sig = inspect.signature(dep.fn)
                 dep_defaults = {
                     k: v.default
@@ -244,7 +244,7 @@ def component_decorator(
             bound_args.apply_defaults()
             config = dict(bound_args.arguments)
             current_namespace = _current_namespace.get()
-            result = _load_one_artifact_or_predictor(
+            result = _load_one_asset_or_predictor(
                 _namespaces[current_namespace],
                 func,
                 config,
@@ -257,5 +257,5 @@ def component_decorator(
     return decorator
 
 
-artifact = component_decorator(ComponentType.ARTIFACT)
+asset = component_decorator(ComponentType.ASSET)
 predictor = component_decorator(ComponentType.PREDICTOR)

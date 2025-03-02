@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 class ComponentType(enum.Enum):
     PREDICTOR = "predictor"
-    ARTIFACT = "artifact"
+    ASSET = "asset"
     FILE = "file"
 
 

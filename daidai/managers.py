@@ -86,10 +86,8 @@ class ModelManager:
         elif preload is None or (isinstance(preload, Iterable)):
             preload = dict.fromkeys(preload or [], None)
         else:
-            raise TypeError(
-                f"Invalid type for artifacts_or_predictors: {type(preload)}"
-            )
-        self.artifacts_or_predictors = preload
+            raise TypeError(f"Invalid type for assets_or_predictors: {type(preload)}")
+        self.assets_or_predictors = preload
         if preload:
             self._load()
 
@@ -99,31 +97,31 @@ class ModelManager:
 
     def load(
         self,
-        artifacts_or_predictors: Callable
+        assets_or_predictors: Callable
         | Generator
         | dict[Callable, dict[str, Any] | None]
         | Iterable[Callable | Generator],
     ):
-        if isinstance(artifacts_or_predictors, dict):
-            return _load_many_artifacts_or_predictors(
-                self._namespace, artifacts_or_predictors
+        if isinstance(assets_or_predictors, dict):
+            return _load_many_assets_or_predictors(
+                self._namespace, assets_or_predictors
             )
-        if isinstance(artifacts_or_predictors, Iterable):
-            return _load_many_artifacts_or_predictors(
+        if isinstance(assets_or_predictors, Iterable):
+            return _load_many_assets_or_predictors(
                 self._namespace,
-                dict.fromkeys(artifacts_or_predictors, None),
+                dict.fromkeys(assets_or_predictors, None),
             )
-        if isinstance(artifacts_or_predictors, Callable | Generator):
-            return _load_one_artifact_or_predictor(
-                self._namespace, {artifacts_or_predictors: None}
+        if isinstance(assets_or_predictors, Callable | Generator):
+            return _load_one_asset_or_predictor(
+                self._namespace, {assets_or_predictors: None}
             )
         raise TypeError(
-            f"Invalid type for artifacts_or_predictors: {type(artifacts_or_predictors)}"
+            f"Invalid type for assets_or_predictors: {type(assets_or_predictors)}"
         )
 
     def _load(self):
         try:
-            self.load(self.artifacts_or_predictors)
+            self.load(self.assets_or_predictors)
             self._exit_stack = _register_cleanup_functions(self._namespace)
         except Exception as e:
             logger.error("Error during loading components", error=str(e))
@@ -153,7 +151,7 @@ class ModelManager:
             logger.error("Exiting due to exception", error=str(exc_val))
 
 
-def _load_one_artifact_or_predictor(
+def _load_one_asset_or_predictor(
     namespace: dict[str, dict[frozenset, Any]],
     func: Callable | Generator,
     config: dict[str, Any] | None = None,
@@ -178,7 +176,7 @@ def _load_one_artifact_or_predictor(
         type=component_type.value,
         config=config,
     )
-    # whether the function is an artifact or a predictor, it can have files dependencies
+    # whether the function is an asset or a predictor, it can have files dependencies
     files = _functions[func.__name__]["files"]
     for param_name, uri, files_params in files:
         logger.debug(
@@ -211,7 +209,7 @@ def _load_one_artifact_or_predictor(
             file_dependency = load_file_dependency(uri, files_params)
             _cache_value(namespace, "file/" + uri, cache_key, file_dependency)
         prepared_args[param_name] = file_dependency
-    # For predictors, we don't cache the function itself, just its artifact dependencies
+    # For predictors, we don't cache the function itself, just its asset dependencies
     if component_type == ComponentType.PREDICTOR:
         dependencies = _functions[func.__name__]["dependencies"]
         logger.debug(
@@ -234,7 +232,7 @@ def _load_one_artifact_or_predictor(
                 component=func.__name__,
                 dependency=dep_func.__name__,
             )
-            dep_result = _load_one_artifact_or_predictor(
+            dep_result = _load_one_asset_or_predictor(
                 namespace, dep_func, dep_func_args
             )
             prepared_args[param_name] = dep_result
@@ -244,7 +242,7 @@ def _load_one_artifact_or_predictor(
         _cache_value(namespace, func.__name__, config_cache_key, prepared_predictor)
         return prepared_predictor
 
-    if component_type != ComponentType.ARTIFACT:
+    if component_type != ComponentType.ASSET:
         logger.error("Invalid component type", component_type=component_type)
         raise ValueError(f"Invalid component type: {component_type}")
     dependencies = _functions[func.__name__]["dependencies"]
@@ -269,11 +267,11 @@ def _load_one_artifact_or_predictor(
             component=func.__name__,
             dependency=dep_func.__name__,
         )
-        dep_result = _load_one_artifact_or_predictor(namespace, dep_func, dep_func_args)
+        dep_result = _load_one_asset_or_predictor(namespace, dep_func, dep_func_args)
         prepared_args[param_name] = dep_result
 
     final_args = prepared_args | (config or {})
-    logger.debug("Computing artifact", name=func.__name__, args=final_args)
+    logger.debug("Computing asset", name=func.__name__, args=final_args)
     try:
         result = (
             func.__wrapped__(**final_args)
@@ -307,35 +305,35 @@ def _load_one_artifact_or_predictor(
         raise ComponentLoadError("Failed to load component") from e
 
 
-def _load_many_artifacts_or_predictors(
+def _load_many_assets_or_predictors(
     namespace: dict[str, dict[frozenset, Any]],
-    artifacts_or_predictors: dict[Callable, dict[str, Any] | None],
+    assets_or_predictors: dict[Callable, dict[str, Any] | None],
 ) -> None:
     logger.debug(
         "Loading model components",
-        artifacts=[
+        assets=[
             f
-            for f in artifacts_or_predictors
-            if _functions[f.__name__]["type"] == ComponentType.ARTIFACT
+            for f in assets_or_predictors
+            if _functions[f.__name__]["type"] == ComponentType.ASSET
         ],
         predictors=[
             f.__name__
-            for f in artifacts_or_predictors
+            for f in assets_or_predictors
             if _functions[f.__name__]["type"] == ComponentType.PREDICTOR
         ],
         namespace=namespace,
     )
-    for artifact_or_predictor, config in artifacts_or_predictors.items():
-        _load_one_artifact_or_predictor(
+    for asset_or_predictor, config in assets_or_predictors.items():
+        _load_one_asset_or_predictor(
             namespace,
-            artifact_or_predictor,
+            asset_or_predictor,
             config,
         )
 
 
-def _cleanup_artifact_namespace(name, generator):
+def _cleanup_asset_namespace(name, generator):
     try:
-        logger.debug("Cleaning up artifact", name=name)
+        logger.debug("Cleaning up asset", name=name)
         next(generator)
     except StopIteration:
         pass
@@ -355,22 +353,22 @@ def _register_cleanup_functions(
     exit_stack = contextlib.ExitStack()
     for func_name, generator in namespace.get("__cleanup__", {}).items():
         exit_stack.callback(
-            lambda name=func_name, gen=generator: _cleanup_artifact_namespace(name, gen)
+            lambda name=func_name, gen=generator: _cleanup_asset_namespace(name, gen)
         )
     return exit_stack
 
 
 def extract_dependencies_to_load(
-    artifacts_or_predictors: dict[Callable, dict[str, Any] | None],
+    assets_or_predictors: dict[Callable, dict[str, Any] | None],
 ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
     """
     Extract all file dependencies from components in a flat structure for parallel resolution.
     """
     visited = set()
     flattened_predictors = []
-    flattened_artifacts = []
+    flattened_assets = []
     flattened_file_deps = []
-    queue = collections.deque(artifacts_or_predictors.items())
+    queue = collections.deque(assets_or_predictors.items())
     while queue:
         func, config = queue.popleft()
         config = config or {}
@@ -384,8 +382,8 @@ def extract_dependencies_to_load(
                 # If the dependency is passed in the config, we don't need to resolve it
                 continue
             queue.append((dep_func, dep_func_args))
-        if _functions[func.__name__]["type"] == ComponentType.ARTIFACT:
-            flattened_artifacts.append((func.__name__, config))
+        if _functions[func.__name__]["type"] == ComponentType.ASSET:
+            flattened_assets.append((func.__name__, config))
         else:
             flattened_predictors.append((func.__name__, config))
         files_dependencies = _functions[func.__name__]["files"]
@@ -401,6 +399,6 @@ def extract_dependencies_to_load(
 
     return {
         "predictors": flattened_predictors,
-        "artifacts": flattened_artifacts,
+        "assets": flattened_assets,
         "files": flattened_file_deps,
     }

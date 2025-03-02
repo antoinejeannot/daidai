@@ -51,7 +51,7 @@ def collect_components(
 ) -> dict[str, list[dict[str, Any]]]:
     """Collect all components of the specified type."""
     result = {
-        "artifacts": [],
+        "assets": [],
         "predictors": [],
         "files": [],
     }
@@ -79,8 +79,8 @@ def collect_components(
                     {"uri": uri, "param_name": param_name, "config": args}
                 )
 
-        if metadata["type"] == ComponentType.ARTIFACT:
-            result["artifacts"].append(component_info)
+        if metadata["type"] == ComponentType.ASSET:
+            result["assets"].append(component_info)
         elif metadata["type"] == ComponentType.PREDICTOR:
             result["predictors"].append(component_info)
         elif metadata["type"] == ComponentType.FILE:
@@ -136,18 +136,18 @@ def render_rich_components(
             usage_node = file_node.add("Used by:")
             for usage in file_info["used_by"]:
                 usage_node.add(
-                    f"[{'green' if usage['component_type'] == 'artifact' else 'magenta'}]{usage['component_name']}[/] "
+                    f"[{'green' if usage['component_type'] == 'asset' else 'magenta'}]{usage['component_name']}[/] "
                     f"({usage['component_type']}) as [yellow]{usage['param_name']}[/]"
                 )
 
-    if component_type in (ComponentType.ARTIFACT, "all"):
-        artifacts_tree = components_tree.add("🧩 Artifacts")
-        for artifact in data["artifacts"]:
-            artifact_node = artifacts_tree.add(f"[bold green]{artifact['name']}[/]")
+    if component_type in (ComponentType.ASSET, "all"):
+        assets_tree = components_tree.add("🧩 Assets")
+        for asset in data["assets"]:
+            asset_node = assets_tree.add(f"[bold green]{asset['name']}[/]")
 
-            if artifact["dependencies"]:
-                deps_node = artifact_node.add("Dependencies")
-                for dep in artifact["dependencies"]:
+            if asset["dependencies"]:
+                deps_node = asset_node.add("Dependencies")
+                for dep in asset["dependencies"]:
                     config_str = (
                         ", ".join(f"{k}={v}" for k, v in dep["config"].items())
                         if dep["config"]
@@ -157,9 +157,9 @@ def render_rich_components(
                         f"[yellow]{dep['param_name']}[/]: [green]{dep['name']}[/] ({dep['type']}) - {config_str}"
                     )
 
-            if artifact["files"]:
-                files_node = artifact_node.add("Files")
-                for file in artifact["files"]:
+            if asset["files"]:
+                files_node = asset_node.add("Files")
+                for file in asset["files"]:
                     if (
                         cache_strategy
                         and cache_strategy != file["config"]["cache_strategy"]
@@ -224,9 +224,9 @@ def render_raw_components(
                         continue
                     output_sections["files"].add(file["uri"])
 
-    if component_type in (ComponentType.ARTIFACT, "all"):
-        for artifact in data["artifacts"]:
-            output_sections["artifacts"].add(artifact["name"])
+    if component_type in (ComponentType.ASSET, "all"):
+        for asset in data["assets"]:
+            output_sections["assets"].add(asset["name"])
 
     if component_type in (ComponentType.PREDICTOR, "all"):
         for predictor in data["predictors"]:
@@ -246,7 +246,7 @@ def render_raw_components(
         for item in sorted(items):
             if section == "files":
                 console.print(item, style="cyan")
-            elif section == "artifacts":
+            elif section == "assets":
                 console.print(item, style="green")
             elif section == "predictors":
                 console.print(item, style="magenta")
@@ -260,7 +260,7 @@ def cli(): ...
 @click.option("-m", "--module", required=True, help="Python module or file to analyze")
 @click.argument(
     "component_type",
-    type=click.Choice(["artifacts", "predictors", "files", "all"]),
+    type=click.Choice(["assets", "predictors", "files", "all"]),
     default="all",
     required=False,
 )
@@ -279,7 +279,7 @@ def cli(): ...
     help="Output format",
 )
 def list(module, component_type, cache_strategy, format):
-    """List all components (predictors, artifacts and files) in the module.
+    """List all components (predictors, assets and files) in the module.
 
     Supports multiple output formats including text and Markdown.
     """
