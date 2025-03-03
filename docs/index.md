@@ -452,6 +452,83 @@ This ensures your ML components load quickly while minimizing redundant computat
 - `DAIDAI_FORCE_DOWNLOAD`: Force download even if cached versions exist
 - `DAIDAI_LOG_LEVEL`: Logging verbosity level
 
+## 🖥️ Command Line
+
+daidai provides a CLI that helps you explore your components and their relationships, making it easier to understand your ML system's architecture & pipelines.
+
+```bash
+# Install the CLI
+pip install daidai[cli]
+```
+
+### Commands
+
+#### List Components
+
+The `list` command displays all daidai components in your module, showing assets, predictors, and artifacts along with their dependencies and configurations:
+
+```bash
+# List all components in a module
+daidai list -m [module.py] [assets|predictors|artifacts] [-c cache_strategy] [-f format]
+
+```
+The output provides a detailed view of your component graph, making it easy to visualize dependencies and configurations:
+
+```
+$ daidai list -m example.py
+
+📦 Daidai Components
+├── 📄 Artifacts
+│   └── s3://bucket/model.pt
+│       ├── Cache strategies: on_disk
+│       └── Used by:
+│           └── bert_model (asset) as model_path
+├── 🧩 Assets
+│   ├── bert_model
+│   │   └── Artifacts
+│   │       └── model_path: s3://bucket/model.pt - Cache: on_disk
+│   └── tokenizer
+│       └── Artifacts
+│           └── vocab_file: s3://bucket/vocab.txt - Cache: on_disk
+└── 🔮 Predictors
+    └── classify_text
+        └── Dependencies
+            ├── model: bert_model (asset) - default
+            └── tokenizer: tokenizer (asset) - default
+```
+
+This visualization helps you understand:
+- Which artifacts are being used and their cache strategies
+- How assets depend on artifacts and other assets
+- How predictors compose multiple assets together
+
+The CLI is particularly useful for:
+- Documenting your ML system architecture
+- Debugging dependency issues
+- Understanding resource usage patterns
+- Discovering optimization opportunities
+
+You can also filter components by type or cache strategy, and customize the output format for easier integration with other tools.
+
+##### Scenario: pre-caching artifacts for faster startup
+
+```bash
+daidai list -m example.py artifacts -c on_disk -f raw
+```
+Then, the **soon-to-be-built daidai cache command** will allow you to pre-cache / download all artifacts in the list to a specific directory, so you can build a Docker image with all dependencies pre-cached.
+
+```bash
+[previous command] | daidai cache -d /path/to/cache -
+```
+
+Then in your Dockerfile:
+
+```Dockerfile
+COPY /path/to/cache /path/to/cache
+ENV DAIDAI_CACHE_DIR /path/to/cache
+```
+
+Et voilà, your service will start up faster as all artifacts are already downloaded and cached.
 
 ## 🧰 Adaptable Design
 
