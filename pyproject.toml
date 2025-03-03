@@ -58,7 +58,7 @@ artifacts = [
 memory = [
     "pympler>=1.1",
 ]
-all = ["daidai[artifacts, memory]"]
+all = ["daidai[artifacts, memory, cli]"]
 publish = [
     "build>=1.2.2.post1",
     "twine>=6.1.0",
@@ -73,7 +73,7 @@ dev = [
     "ruff==0.9.7",
     "pytest>=8.3.4",
     "bandit[toml]>=1.8.3",
-    "daidai[artifacts, memory, cli]",
+    "daidai[all]",
 ]
 
 [project.scripts]
