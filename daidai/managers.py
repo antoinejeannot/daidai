@@ -4,11 +4,13 @@ import contextvars
 import functools
 import time
 from collections.abc import Callable, Generator, Iterable
+from pathlib import Path
 from typing import Any
 
 from daidai.artifacts import load_artifact
 from daidai.logs import get_logger
 from daidai.types import (
+    ArtifactCacheStrategy,
     ComponentLoadError,
     ComponentType,
     Metadata,
@@ -34,18 +36,25 @@ _functions: dict[str, Metadata] = {}  # func_name -> metadata
 def _create_cache_key(args: dict[str, Any] | None) -> frozenset:
     if not args:
         return frozenset()
+
+    def make_hashable(value):
+        if isinstance(value, dict):
+            return frozenset((k, make_hashable(v)) for k, v in value.items())
+        elif isinstance(value, list | tuple):
+            return tuple(make_hashable(item) for item in value)
+        elif isinstance(value, set):
+            return frozenset(make_hashable(item) for item in value)
+        elif isinstance(value, int | float | str | bool | type(None)):
+            return value
+        else:
+            # Fall back to string representation for non-hashable types
+            return f"__custom__{type(value).__name__}_{id(value)}"
+
     hashable_items = []
     for k, v in args.items():
-        if isinstance(v, Callable):
+        if callable(v):
             continue
-        # Convert mutable types to immutable
-        if isinstance(v, dict):
-            v = frozenset((k2, v2) for k2, v2 in v.items())
-        elif isinstance(v, list):
-            v = tuple(v)
-        elif isinstance(v, set):
-            v = frozenset(v)
-        hashable_items.append((k, v))
+        hashable_items.append((k, make_hashable(v)))
     return frozenset(hashable_items)
 
 
@@ -73,6 +82,10 @@ class ModelManager:
         | Iterable[Callable | Generator]
         | None = None,
         namespace: str | None = None,
+        force_download: bool | None = None,
+        cache_strategy: str | ArtifactCacheStrategy | None = None,
+        cache_directory: str | Path | None = None,
+        storage_options: dict[str, Any] | None = None,
     ):
         if namespace == "global":
             raise ValueError("Cannot use 'global' as a namespace")
@@ -88,6 +101,23 @@ class ModelManager:
         else:
             raise TypeError(f"Invalid type for assets_or_predictors: {type(preload)}")
         self.assets_or_predictors = preload
+        self.artifact_config = {}
+        if force_download is not None:
+            self.artifact_config["force_download"] = force_download
+        if cache_strategy is not None:
+            self.artifact_config["cache_strategy"] = (
+                cache_strategy
+                if isinstance(cache_strategy, ArtifactCacheStrategy)
+                else ArtifactCacheStrategy(cache_strategy)
+            )
+        if cache_directory is not None:
+            self.artifact_config["cache_directory"] = (
+                cache_directory
+                if isinstance(cache_directory, Path)
+                else Path(cache_directory)
+            )
+        if storage_options is not None:
+            self.artifact_config["storage_options"] = storage_options
         if preload:
             self._load()
 
@@ -101,20 +131,44 @@ class ModelManager:
         | Generator
         | dict[Callable, dict[str, Any] | None]
         | Iterable[Callable | Generator],
+        force_download: bool | None = None,
+        cache_strategy: str | ArtifactCacheStrategy | None = None,
+        cache_directory: str | Path | None = None,
+        storage_options: dict[str, Any] | None = None,
     ):
+        artifact_config = self.artifact_config.copy()
+        if force_download is not None:
+            artifact_config["force_download"] = force_download
+        if cache_strategy is not None:
+            artifact_config["cache_strategy"] = (
+                cache_strategy
+                if isinstance(cache_strategy, ArtifactCacheStrategy)
+                else ArtifactCacheStrategy(cache_strategy)
+            )
+        if cache_directory is not None:
+            artifact_config["cache_directory"] = (
+                cache_directory
+                if isinstance(cache_directory, Path)
+                else Path(cache_directory)
+            )
+        if storage_options is not None:
+            artifact_config["storage_options"] = storage_options
+
         if isinstance(assets_or_predictors, dict):
             return _load_many_assets_or_predictors(
-                self._namespace, assets_or_predictors
+                self._namespace, assets_or_predictors, artifact_config
             )
         if isinstance(assets_or_predictors, Iterable):
             return _load_many_assets_or_predictors(
                 self._namespace,
                 dict.fromkeys(assets_or_predictors, None),
+                artifact_config,
             )
         if isinstance(assets_or_predictors, Callable | Generator):
             return _load_one_asset_or_predictor(
-                self._namespace, {assets_or_predictors: None}
+                self._namespace, assets_or_predictors, None, artifact_config
             )
+
         raise TypeError(
             f"Invalid type for assets_or_predictors: {type(assets_or_predictors)}"
         )
@@ -155,11 +209,24 @@ def _load_one_asset_or_predictor(
     namespace: dict[str, dict[frozenset, Any]],
     func: Callable | Generator,
     config: dict[str, Any] | None = None,
+    parent_artifact_config: dict[str, Any] | None = None,
 ) -> Callable | Generator:
     t0 = time.perf_counter()
     component_type = _functions[func.__name__]["type"]
     prepared_args = {}
     config = config or {}
+    parent_artifact_config = parent_artifact_config or {}
+    current_artifact_config = {
+        k: config.pop(k)
+        for k in (
+            "force_download",
+            "cache_strategy",
+            "cache_directory",
+            "storage_options",
+        )
+        if k in config
+    }
+    effective_artifact_config = current_artifact_config | parent_artifact_config
     config_cache_key = _create_cache_key(config)
     if cached := _get_from_cache(namespace, func.__name__, config_cache_key):
         logger.debug(
@@ -175,17 +242,11 @@ def _load_one_asset_or_predictor(
         name=func.__name__,
         type=component_type.value,
         config=config,
+        artifact_config=effective_artifact_config,
     )
     # whether the function is an asset or a predictor, it can have artifacts
     artifacts = _functions[func.__name__]["artifacts"]
     for param_name, uri, artifact_params in artifacts:
-        logger.debug(
-            "Processing artifact",
-            component=func.__name__,
-            param_name=param_name,
-            dependency=uri,
-            params=artifact_params,
-        )
         if param_name in config:
             logger.debug(
                 "Skipping artifact dependency resolution",
@@ -194,7 +255,16 @@ def _load_one_asset_or_predictor(
                 cause="dependency passed in config",
             )
             continue
-        cache_key = _create_cache_key(artifact_params)
+
+        merged_params = artifact_params | effective_artifact_config
+        logger.debug(
+            "Processing artifact",
+            component=func.__name__,
+            param_name=param_name,
+            dependency=uri,
+            params=merged_params,
+        )
+        cache_key = _create_cache_key(merged_params)
         artifact = _get_from_cache(
             namespace, "artifact/" + uri, cache_key
         )  # artifact/ to avoid collision with function names
@@ -206,7 +276,7 @@ def _load_one_asset_or_predictor(
                 elapsed=round(time.perf_counter() - t0, 9),
             )
         else:
-            artifact = load_artifact(uri, artifact_params)
+            artifact = load_artifact(uri, merged_params)
             _cache_value(namespace, "artifact/" + uri, cache_key, artifact)
         prepared_args[param_name] = artifact
     # For predictors, we don't cache the function itself, just its asset dependencies
@@ -231,9 +301,12 @@ def _load_one_asset_or_predictor(
                 "Processing dependency",
                 component=func.__name__,
                 dependency=dep_func.__name__,
+                param_name=param_name,
+                params=dep_func_args,
+                artifact_params=effective_artifact_config,
             )
             dep_result = _load_one_asset_or_predictor(
-                namespace, dep_func, dep_func_args
+                namespace, dep_func, dep_func_args, effective_artifact_config
             )
             prepared_args[param_name] = dep_result
 
@@ -267,7 +340,9 @@ def _load_one_asset_or_predictor(
             component=func.__name__,
             dependency=dep_func.__name__,
         )
-        dep_result = _load_one_asset_or_predictor(namespace, dep_func, dep_func_args)
+        dep_result = _load_one_asset_or_predictor(
+            namespace, dep_func, dep_func_args, effective_artifact_config
+        )
         prepared_args[param_name] = dep_result
 
     final_args = prepared_args | (config or {})
@@ -308,6 +383,7 @@ def _load_one_asset_or_predictor(
 def _load_many_assets_or_predictors(
     namespace: dict[str, dict[frozenset, Any]],
     assets_or_predictors: dict[Callable, dict[str, Any] | None],
+    parent_artifact_config: dict[str, Any] | None = None,
 ) -> None:
     logger.debug(
         "Loading model components",
@@ -328,6 +404,7 @@ def _load_many_assets_or_predictors(
             namespace,
             asset_or_predictor,
             config,
+            parent_artifact_config,
         )
 
 
@@ -391,7 +468,7 @@ def extract_dependencies_to_load(
             if param_name in config:
                 # If the dependency is passed in the config, we don't need to resolve
                 continue
-            cache_key = _create_cache_key(artifact_params | {"__artifact_uri__": uri})
+            cache_key = _create_cache_key(artifact_params | {"uri": uri})
             if cache_key in visited:
                 continue
             visited.add(cache_key)
