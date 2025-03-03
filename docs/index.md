@@ -42,19 +42,13 @@ Built for both rapid prototyping and production ML workflows, **daidai 🍊**:
 
 ## Installation
 
-```bash
-# Full installation with all features
-pip install daidai[all]
 
+```bash
 # Core functionality of assets & predictors
 pip install daidai
 
-# With file handling support, disk caching, and fsspec
-pip install daidai[artifacts]
-
-# With memory usage tracking
-pip install daidai[memory]
-
+# Full installation with all features: artifacts, memory tracking, CLI
+pip install daidai[all] # or any combination of [artifacts, memory, cli]
 ```
 
 ## Quick Start
@@ -69,12 +63,9 @@ from daidai import ModelManager, asset, predictor
 
 # Define assets which are long-lived objects
 # that can be used by multiple predictors, or other assets
-
-
 @asset
 def openai_client(**configuration: dict[str, Any]) -> openai.OpenAI:
     return openai.OpenAI(**configuration)
-
 
 # Fetch a distant file from HTTPS, but it can be from any source: local, S3, GCS, Azure, FTP, HF Hub, etc.
 @asset
@@ -90,8 +81,6 @@ def dogo_picture(
 
 # Define a predictor that depends on the previous assets
 # which are automatically loaded and passed as an argument
-
-
 @predictor
 def ask(
     message: str,
@@ -119,7 +108,6 @@ def ask(
     )
     return response.choices[0].message.content
 
-
 # daidai takes care of loading dependencies & injecting assets!
 print(ask("Hello, what's in the picture ?"))
 # >>> The picture features a dog with a black and white coat.
@@ -134,6 +122,29 @@ my_other_openai_client = openai.OpenAI(timeout=0.1)
 print(ask("Hello, what's in the picture ?", client=my_other_openai_client))
 # >>> openai.APITimeoutError: Request timed out.
 # OOOPS, the new client timed out, of course :-)
+```
+
+You can visualize the dependency graph of the above code using the `daidai CLI`:
+
+```
+$ daidai list -m example.py
+
+📦 Daidai Components
+├── 📄 Artifacts
+│   └── https://images.pexels.com/photos/220938/pexels-photo-220938.jpeg
+│       ├── Cache strategies: no_cache
+│       └── Used by:
+│           └── dogo_picture (asset) as picture
+├── 🧩 Assets
+│   ├── openai_client
+│   └── dogo_picture
+│       └── Artifacts
+│           └── picture: https://images.pexels.com/photos/220938/pexels-photo-220938.jpeg - Cache: no_cache
+└── 🔮 Predictors
+    └── ask
+        └── Dependencies
+            ├── dogo_picture: dogo_picture (asset) - default
+            └── client: openai_client (asset) - timeout=5
 ```
 
 ## Roadmap
