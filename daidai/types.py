@@ -43,6 +43,7 @@ class ArtifactParams(TypedDict):
     ]
     cache_strategy: Annotated[ArtifactCacheStrategy, "cache strategy to use"]
     force_download: Annotated[bool, "force download artifact(s)"]
+    cache_dir: Annotated[Path, "cache directory"]
 
 
 VALID_TYPES = (
