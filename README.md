@@ -16,7 +16,7 @@
 
 **daidai 🍊** is a minimalist, type-safe dependency management system for AI/ML components that streamlines workflow development with dependency injection, intelligent caching and seamless file handling.
 
-🚧 **daidai** is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, but feel free to give it a try :) 🚧
+🚧 **daidai** is still very much a work in progress and is definitely not prod-ready. It is currently developed as a _[selfish software](https://every.to/source-code/selfish-software)_ to become my personal go-to MLOps library, as well as to distill years of building and maintaining complex NLP pipelines, but feel free to give it a try :) 🚧
 
 <details open>
 <summary>🎧 Stop reading, listen to daidai 🍊's podcast instead 🎙️</summary>
